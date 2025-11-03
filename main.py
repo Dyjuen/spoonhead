@@ -212,6 +212,11 @@ class Game:
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
                         self.running = False
+                    elif event.key == pygame.K_r:
+                        # Reset game
+                        self.game_state = 'platformer'
+                        self.camera_x = 0
+                        self.init_level()
 
             # Get camera frame and gestures
             ret, frame = self.cap.read()
