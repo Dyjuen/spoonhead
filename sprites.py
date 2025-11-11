@@ -101,12 +101,12 @@ class Player(pygame.sprite.Sprite):
             self.dash_timer = current_time
             self.last_dash = current_time
 
-    def shoot(self):
+    def shoot(self, shoot_direction='horizontal'):
         current_time = pygame.time.get_ticks()
         if current_time - self.last_shot > self.shoot_cooldown:
             self.last_shot = current_time
             direction = 1 if self.facing_right else -1
-            return Projectile(self.rect.centerx, self.rect.centery, direction)
+            return Projectile(self.rect.centerx, self.rect.centery, direction, shoot_direction)
         return None
 
     def take_damage(self, amount):
@@ -119,8 +119,8 @@ class Player(pygame.sprite.Sprite):
 
 
 class Projectile(pygame.sprite.Sprite):
-    """Projectile shot by the player"""
-    def __init__(self, x, y, direction):
+    """Projectile shot by the player with directional support"""
+    def __init__(self, x, y, direction=1, shoot_direction='horizontal'):
         super().__init__()
         if PROJECTILE_IMAGE:
             self.image = pygame.image.load(PROJECTILE_IMAGE).convert_alpha()
@@ -129,13 +129,32 @@ class Projectile(pygame.sprite.Sprite):
             self.image.fill(YELLOW)
         
         self.rect = self.image.get_rect(center=(x, y))
-        self.speed = 12 * direction
         self.direction = direction
+        self.shoot_direction = shoot_direction
+        
+        # Set velocity based on shoot direction
+        if shoot_direction == 'up':
+            self.vx = 0
+            self.vy = -12
+        elif shoot_direction == 'down':
+            self.vx = 0
+            self.vy = 12
+        elif shoot_direction == 'up_right':
+            self.vx = 8 * direction
+            self.vy = -8
+        elif shoot_direction == 'up_left':
+            self.vx = -8 * abs(direction)
+            self.vy = -8
+        else:  # horizontal
+            self.vx = 12 * direction
+            self.vy = 0
 
     def update(self):
-        self.rect.x += self.speed
-        # Remove if off screen (check with larger boundary)
-        if self.rect.right < -100 or self.rect.left > 2000:
+        self.rect.x += self.vx
+        self.rect.y += self.vy
+        # Remove if off screen
+        if (self.rect.right < -100 or self.rect.left > 2000 or
+            self.rect.bottom < -100 or self.rect.top > 1000):
             self.kill()
 
 

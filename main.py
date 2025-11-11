@@ -234,13 +234,17 @@ class Game:
                 self.enemies.update()
                 self.projectiles.update()
                 
+                # Check if player fell off the map
+                if self.player.rect.top > SCREEN_HEIGHT + 100:
+                    self.game_state = 'game_over'
+                
                 # Jump
                 if actions.get('jump'):
                     self.player.jump()
                 
-                # Shoot
+                # Shoot with direction
                 if actions['shoot']:
-                    projectile = self.player.shoot()
+                    projectile = self.player.shoot(actions.get('shoot_direction', 'horizontal'))
                     if projectile:
                         self.all_sprites.add(projectile)
                         self.projectiles.add(projectile)
@@ -284,13 +288,17 @@ class Game:
                 self.projectiles.update()
                 self.boss_projectiles.update()
                 
+                # Check if player fell off
+                if self.player.rect.top > SCREEN_HEIGHT + 100:
+                    self.game_state = 'game_over'
+                
                 # Jump
                 if actions.get('jump'):
                     self.player.jump()
                 
-                # Shoot
+                # Shoot with direction
                 if actions['shoot']:
-                    projectile = self.player.shoot()
+                    projectile = self.player.shoot(actions.get('shoot_direction', 'horizontal'))
                     if projectile:
                         self.all_sprites.add(projectile)
                         self.projectiles.add(projectile)
@@ -343,7 +351,7 @@ class Game:
                 self.screen.blit(overlay, (0, 0))
                 self.draw_text("VICTORY!", 80, SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 50, GOLD)
                 self.draw_text(f"Coins Collected: {self.player.coins}", 40, SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 30)
-                self.draw_text("Press ESC to quit", 30, SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 80)
+                self.draw_text("Press R to Restart | ESC to Quit", 30, SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 80)
             
             elif self.game_state == 'game_over':
                 overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
@@ -351,7 +359,7 @@ class Game:
                 overlay.fill(BLACK)
                 self.screen.blit(overlay, (0, 0))
                 self.draw_text("GAME OVER", 80, SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 30, RED)
-                self.draw_text("Press ESC to quit", 30, SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 40)
+                self.draw_text("Press R to Restart | ESC to Quit", 30, SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 40)
 
             pygame.display.flip()
             self.clock.tick(60)
