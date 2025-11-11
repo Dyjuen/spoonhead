@@ -13,6 +13,7 @@ PURPLE = (147, 51, 234)
 BROWN = (139, 90, 43)
 GOLD = (255, 215, 0)
 SKY_BLUE = (135, 206, 235)
+GRAY = (128, 128, 128)
 
 # --- Asset Placeholders ---
 # Replace these with paths to your own assets
