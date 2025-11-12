@@ -12,10 +12,10 @@ class HandGestureController:
     - Both up = Stand still
     - Double tap Index = Dash RIGHT
     - Double tap Middle = Dash LEFT
-    - Fist = JUMP
     
-    RIGHT HAND (Shooting):
+    RIGHT HAND (Actions):
     - Point index finger = SHOOT (direction follows finger)
+    - Fist = JUMP
     """
 
     def __init__(self):
@@ -36,20 +36,19 @@ class HandGestureController:
         self.last_shoot = 0
         
         # For double tap detection
-        self.last_index_tap = []  # List of tap timestamps
+        self.last_index_tap = []
         self.last_middle_tap = []
-        self.tap_time_window = 0.5  # 500ms window for double tap
+        self.tap_time_window = 0.5
         
         # Previous states for transition detection
         self.prev_left_index_up = False
         self.prev_left_middle_up = False
-        self.prev_left_fist = False
+        self.prev_right_fist = False
 
     def is_left_hand(self, hand_landmarks):
         """Determine if hand is left or right based on thumb position"""
         wrist = hand_landmarks.landmark[self.mp_hands.HandLandmark.WRIST]
         thumb_tip = hand_landmarks.landmark[self.mp_hands.HandLandmark.THUMB_TIP]
-        # Mirrored camera: thumb right of wrist = left hand
         return thumb_tip.x > wrist.x
 
     def is_finger_up(self, hand_landmarks, finger_tip_id, finger_pip_id):
@@ -90,163 +89,110 @@ class HandGestureController:
 
     def detect_double_tap(self, tap_list, current_time):
         """Detect if double tap occurred within time window"""
-        # Clean old taps outside window
         tap_list[:] = [t for t in tap_list if current_time - t < self.tap_time_window]
-        
-        # Check if we have 2 taps within window
         if len(tap_list) >= 2:
-            tap_list.clear()  # Reset after detection
+            tap_list.clear()
             return True
         return False
 
     def calculate_shoot_direction(self, hand_landmarks, wrist):
         """Calculate shooting direction based on index finger tip"""
         index_tip = hand_landmarks.landmark[self.mp_hands.HandLandmark.INDEX_FINGER_TIP]
-        
         dx = index_tip.x - wrist.x
         dy = index_tip.y - wrist.y
-        
         angle = math.degrees(math.atan2(dy, dx))
         
-        if -135 < angle < -45:  # Up
-            if dx > 0.05:
-                return 'up_right'
-            elif dx < -0.05:
-                return 'up_left'
-            else:
-                return 'up'
-        elif 45 < angle < 135:  # Down
-            return 'down'
-        else:  # Horizontal
-            return 'horizontal'
+        if -135 < angle < -45:
+            if dx > 0.05: return 'up_right'
+            elif dx < -0.05: return 'up_left'
+            else: return 'up'
+        elif 45 < angle < 135: return 'down'
+        else: return 'horizontal'
 
     def get_gestures(self, frame):
         """Process frame with two-hand intuitive controls"""
         actions = {
-            'move_x': 0.5,  # 0.5 = center (no movement)
-            'shoot': False,
-            'shoot_direction': 'horizontal',
-            'dash': False,
-            'jump': False
+            'move_x': 0.5, 'shoot': False, 'shoot_direction': 'horizontal',
+            'dash': False, 'jump': False
         }
         
         current_time = time.time()
         image_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = self.hands.process(image_rgb)
 
-        left_hand_data = None
-        right_hand_data = None
+        left_hand_data, right_hand_data = None, None
         
         if results.multi_hand_landmarks:
             for hand_landmarks in results.multi_hand_landmarks:
-                self.mp_drawing.draw_landmarks(
-                    frame, hand_landmarks, self.mp_hands.HAND_CONNECTIONS
-                )
-                
+                self.mp_drawing.draw_landmarks(frame, hand_landmarks, self.mp_hands.HAND_CONNECTIONS)
                 wrist = hand_landmarks.landmark[self.mp_hands.HandLandmark.WRIST]
-                is_left = self.is_left_hand(hand_landmarks)
+                h, w, _ = frame.shape
                 
-                if is_left:
+                if self.is_left_hand(hand_landmarks):
                     left_hand_data = {'landmarks': hand_landmarks, 'wrist': wrist}
-                    h, w, _ = frame.shape
-                    cv2.putText(frame, "LEFT (Move)", 
-                               (int(wrist.x * w) - 60, int(wrist.y * h) - 20), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                    cv2.putText(frame, "LEFT (Move)", (int(wrist.x*w)-60, int(wrist.y*h)-20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,0), 2)
                 else:
                     right_hand_data = {'landmarks': hand_landmarks, 'wrist': wrist}
-                    h, w, _ = frame.shape
-                    cv2.putText(frame, "RIGHT (Shoot)", 
-                               (int(wrist.x * w) - 60, int(wrist.y * h) - 20), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
+                    cv2.putText(frame, "RIGHT (Action)", (int(wrist.x*w)-60, int(wrist.y*h)-20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,0,0), 2)
             
-            # === LEFT HAND: Movement & Actions ===
+            # === LEFT HAND: Movement & Dash ===
             if left_hand_data:
                 index_up, middle_up = self.get_finger_states(left_hand_data['landmarks'])
-                is_left_fist = self.is_fist(left_hand_data['landmarks'])
                 
-                # MOVEMENT
                 if not index_up and middle_up:
-                    # Index closed, Middle up = Move LEFT
                     actions['move_x'] = 0.2
-                    cv2.putText(frame, "< MOVE LEFT", (10, 70), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+                    cv2.putText(frame, "< MOVE LEFT", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,255,255), 2)
                 elif index_up and not middle_up:
-                    # Middle closed, Index up = Move RIGHT
                     actions['move_x'] = 0.8
-                    cv2.putText(frame, "MOVE RIGHT >", (10, 70), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+                    cv2.putText(frame, "MOVE RIGHT >", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,255,255), 2)
                 else:
-                    # Both up or both down = Stand still
                     actions['move_x'] = 0.5
                 
-                # DOUBLE TAP DETECTION for DASH
-                # Detect index finger tap (transition from up to down)
                 if self.prev_left_index_up and not index_up:
                     self.last_index_tap.append(current_time)
                     if self.detect_double_tap(self.last_index_tap, current_time):
-                        actions['dash'] = True
-                        actions['move_x'] = 0.9  # Dash right
-                        cv2.putText(frame, "DASH RIGHT >>", (10, 110), 
-                                   cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
+                        actions['dash'] = True; actions['move_x'] = 0.9
+                        cv2.putText(frame, "DASH RIGHT >>", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,0), 2)
                 
-                # Detect middle finger tap
                 if self.prev_left_middle_up and not middle_up:
                     self.last_middle_tap.append(current_time)
                     if self.detect_double_tap(self.last_middle_tap, current_time):
-                        actions['dash'] = True
-                        actions['move_x'] = 0.1  # Dash left
-                        cv2.putText(frame, "<< DASH LEFT", (10, 110), 
-                                   cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
+                        actions['dash'] = True; actions['move_x'] = 0.1
+                        cv2.putText(frame, "<< DASH LEFT", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,0), 2)
                 
-                # JUMP with fist
-                if is_left_fist and not self.prev_left_fist:
-                    if current_time - self.last_jump > self.jump_cooldown:
-                        actions['jump'] = True
-                        self.last_jump = current_time
-                        cv2.putText(frame, "JUMP!", (10, 150), 
-                                   cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
-                
-                # Update previous states
-                self.prev_left_index_up = index_up
-                self.prev_left_middle_up = middle_up
-                self.prev_left_fist = is_left_fist
-                
-                # Display finger status
+                self.prev_left_index_up, self.prev_left_middle_up = index_up, middle_up
                 status = f"L: Index={'UP' if index_up else 'DN'} Middle={'UP' if middle_up else 'DN'}"
-                if is_left_fist:
-                    status = "L: FIST"
-                cv2.putText(frame, status, (10, 30), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                cv2.putText(frame, status, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,0), 2)
             
-            # === RIGHT HAND: Shooting ===
+            # === RIGHT HAND: Shooting & Jump ===
             if right_hand_data:
                 index_up, _ = self.get_finger_states(right_hand_data['landmarks'])
+                is_right_fist = self.is_fist(right_hand_data['landmarks'])
                 
-                # Check if pointing (index up, others relatively down)
                 if index_up:
-                    shoot_dir = self.calculate_shoot_direction(
-                        right_hand_data['landmarks'],
-                        right_hand_data['wrist']
-                    )
+                    shoot_dir = self.calculate_shoot_direction(right_hand_data['landmarks'], right_hand_data['wrist'])
                     actions['shoot_direction'] = shoot_dir
-                    
                     if current_time - self.last_shoot > self.shoot_cooldown:
                         actions['shoot'] = True
                         self.last_shoot = current_time
+                    cv2.putText(frame, f"SHOOT {shoot_dir.upper()}!", (10, 190), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,255,255), 2)
                     
-                    cv2.putText(frame, f"SHOOT {shoot_dir.upper()}!", (10, 190), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-                    
-                    # Draw aiming line
                     index_tip = right_hand_data['landmarks'].landmark[self.mp_hands.HandLandmark.INDEX_FINGER_TIP]
                     h, w, _ = frame.shape
-                    wrist_px = (int(right_hand_data['wrist'].x * w), int(right_hand_data['wrist'].y * h))
-                    tip_px = (int(index_tip.x * w), int(index_tip.y * h))
-                    cv2.line(frame, wrist_px, tip_px, (0, 255, 255), 3)
-                    cv2.circle(frame, tip_px, 10, (0, 255, 255), -1)
+                    wrist_px = (int(right_hand_data['wrist'].x*w), int(right_hand_data['wrist'].y*h))
+                    tip_px = (int(index_tip.x*w), int(index_tip.y*h))
+                    cv2.line(frame, wrist_px, tip_px, (0,255,255), 3)
+                    cv2.circle(frame, tip_px, 10, (0,255,255), -1)
+
+                elif is_right_fist and not self.prev_right_fist:
+                    if current_time - self.last_jump > self.jump_cooldown:
+                        actions['jump'] = True
+                        self.last_jump = current_time
+                        cv2.putText(frame, "JUMP!", (10, 150), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,0,0), 2)
+                
+                self.prev_right_fist = is_right_fist
         else:
-            cv2.putText(frame, "Show BOTH hands!", (10, 30), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+            cv2.putText(frame, "Show BOTH hands!", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 2)
 
         # Instructions
         instructions = [
@@ -254,13 +200,12 @@ class HandGestureController:
             "LEFT: Middle closed+Index up=Right",
             "LEFT: Double tap Index=Dash Right",
             "LEFT: Double tap Middle=Dash Left",
-            "LEFT: Fist=Jump",
+            "RIGHT: Fist=Jump",
             "RIGHT: Point=Shoot"
         ]
         
         y_offset = frame.shape[0] - 170
         for i, text in enumerate(instructions):
-            cv2.putText(frame, text, (10, y_offset + i * 23), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+            cv2.putText(frame, text, (10, y_offset + i * 23), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255,255,255), 1)
 
         return actions, frame
