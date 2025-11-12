@@ -18,12 +18,26 @@ GRAY = (128, 128, 128)
 # --- Asset Placeholders ---
 # Replace these with paths to your own assets
 # Example: PLAYER_IMAGE = "assets/images/player.png"
+PLAYER_IDLE_SPRITE = "assets/MC/Main/Cyborg_idle.png"
+PLAYER_RUN_SPRITE = "assets/MC/Main/Cyborg_run.png"
+PLAYER_JUMP_SPRITE = "assets/MC/Main/Cyborg_jump.png"
+PLAYER_DOUBLE_JUMP_SPRITE = "assets/MC/Main/Cyborg_doublejump.png"
+PLAYER_DEATH_SPRITE = "assets/MC/Main/Cyborg_death.png"
+PLAYER_HURT_SPRITE = "assets/MC/Main/Cyborg_hurt.png"
+PLAYER_CLIMB_SPRITE = "assets/MC/Main/Cyborg_climb.png"
+
+BULLET_SPRITE = "assets/Bullets/1.png"
+
+ENEMY_IDLE_SPRITE = "assets/orangjahat/Idle.png"
+ENEMY_WALK_SPRITE = "assets/orangjahat/Walk.png"
+
 PLAYER_IMAGE = None
 PROJECTILE_IMAGE = None
 BOSS_IMAGE = None
-ENEMY_IMAGE = None
+ENEMY_IMAGE = ENEMY_IDLE_SPRITE # Default to idle sprite
 
 # Sound effects
+SHOOT_SOUND_PATH = "assets/audio/Cuphead peashooter sound.mp3"
 SHOOT_SOUND = None
 HIT_SOUND = None
 COIN_SOUND = None
