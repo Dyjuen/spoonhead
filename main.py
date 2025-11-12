@@ -11,11 +11,16 @@ class Game:
 
     def __init__(self):
         pygame.init()
+        pygame.mixer.init() # Initialize mixer
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+        Projectile.load_images() # Load bullet animations
         pygame.display.set_caption("Cuphead-Style Platformer")
         self.clock = pygame.time.Clock()
         self.running = True
         self.game_state = 'home_screen'  # home_screen, level_selection, platformer, boss_fight, victory, game_over
+
+        # Load sound effects
+        self.shoot_sound = pygame.mixer.Sound(SHOOT_SOUND_PATH)
 
         # Gesture controller
         self.gesture_controller = HandGestureController()
@@ -25,8 +30,10 @@ class Game:
         self.camera_x = 0
         
         # Load background
-        self.bg_image = pygame.image.load(os.path.join("assets", "bg.png")).convert()
+        self.bg_image = pygame.image.load(os.path.join("assets", "bg.jpg")).convert()
         self.bg_image = pygame.transform.scale(self.bg_image, (SCREEN_WIDTH, SCREEN_HEIGHT))
+        self.boss_bg_image = pygame.image.load(os.path.join("assets", "bg2.jpg")).convert()
+        self.boss_bg_image = pygame.transform.scale(self.boss_bg_image, (SCREEN_WIDTH, SCREEN_HEIGHT))
 
         # UI Buttons
         self.setup_buttons()
@@ -88,8 +95,9 @@ class Game:
         ]
         
         for x, y, w, h in platform_data:
-            self.all_sprites.add(Platform(x, y, w, h))
-            self.platforms.add(Platform(x, y, w, h))
+            platform = Platform(x, y, w, h)
+            self.all_sprites.add(platform)
+            self.platforms.add(platform)
         
         # Create coins
         coin_positions = [
@@ -99,8 +107,9 @@ class Game:
         ]
         
         for x, y in coin_positions:
-            self.all_sprites.add(Coin(x, y))
-            self.coins.add(Coin(x, y))
+            coin = Coin(x, y)
+            self.all_sprites.add(coin)
+            self.coins.add(coin)
         
         # Create enemies
         enemy_positions = [
@@ -109,8 +118,9 @@ class Game:
         ]
         
         for x, y, patrol in enemy_positions:
-            self.all_sprites.add(Enemy(x, y, patrol))
-            self.enemies.add(Enemy(x, y, patrol))
+            enemy = Enemy(x, y, patrol)
+            self.all_sprites.add(enemy)
+            self.enemies.add(enemy)
         
         # Create boss gate
         self.boss_gate = BossGate(2300, 490)
@@ -191,13 +201,11 @@ class Game:
         self.screen.blit(text_surface, text_rect)
 
     def draw_home_screen(self, mouse_pos):
-        self.screen.blit(self.bg_image, (0, 0))
         self.draw_text("Spoonhead", 100, SCREEN_WIDTH // 2, SCREEN_HEIGHT // 4, GOLD)
         self.start_button.draw(self.screen, mouse_pos)
         self.quit_button.draw(self.screen, mouse_pos)
 
     def draw_level_selection(self, mouse_pos):
-        self.screen.blit(self.bg_image, (0, 0))
         self.draw_text("Select a Level", 80, SCREEN_WIDTH // 2, SCREEN_HEIGHT // 4, GOLD)
         self.level1_button.draw(self.screen, mouse_pos)
         self.level2_button.draw(self.screen, mouse_pos)
@@ -254,7 +262,10 @@ class Game:
                     if actions.get('jump'): self.player.jump()
                     if actions['shoot']:
                         proj = self.player.shoot(actions.get('shoot_direction', 'horizontal'))
-                        if proj: self.all_sprites.add(proj); self.projectiles.add(proj)
+                        if proj:
+                            self.all_sprites.add(proj)
+                            self.projectiles.add(proj)
+                            self.shoot_sound.play() # Play shooting sound
                     if actions.get('dash'): self.player.dash()
                     if pygame.sprite.spritecollide(self.player, self.coins, True): self.player.collect_coin()
                     if pygame.sprite.spritecollide(self.player, self.enemies, False):
@@ -274,7 +285,11 @@ class Game:
                     if actions.get('jump'): self.player.jump()
                     if actions['shoot']:
                         proj = self.player.shoot(actions.get('shoot_direction', 'horizontal'))
-                        if proj: self.all_sprites.add(proj); self.projectiles.add(proj)
+                        if proj:
+                            self.all_sprites.add(proj)
+                            self.projectiles.add(proj)
+                            self.shoot_sound.play() # Play shooting sound
+
                     if actions.get('dash'): self.player.dash()
                     if self.boss and pygame.sprite.spritecollide(self.boss, self.projectiles, True): self.boss.take_damage(10)
                     if pygame.sprite.spritecollide(self.player, self.boss_projectiles, True):
@@ -282,7 +297,14 @@ class Game:
                         if self.player.health <= 0: self.game_state = 'game_over'
 
             # --- Drawing ---
-            self.screen.fill(SKY_BLUE)
+            # Draw background based on game state
+            if self.game_state in ['boss_fight', 'victory']:
+                self.screen.blit(self.boss_bg_image, (0, 0))
+            elif self.game_state == 'platformer':
+                self.screen.blit(self.bg_image, (0, 0))
+            else: # Home, level selection, game over
+                self.screen.blit(self.bg_image, (0, 0))
+
 
             if self.game_state == 'home_screen':
                 self.draw_home_screen(mouse_pos)
@@ -290,9 +312,10 @@ class Game:
                 self.draw_level_selection(mouse_pos)
             elif self.game_state in ['platformer', 'boss_fight', 'victory', 'game_over']:
                 if self.game_state == 'platformer':
+                    # Draw sprites with camera offset
                     for sprite in self.all_sprites:
                         self.screen.blit(sprite.image, (sprite.rect.x - self.camera_x, sprite.rect.y))
-                else:
+                else: # boss_fight, victory, game_over
                     self.all_sprites.draw(self.screen)
                 
                 self.draw_ui()
