@@ -8,9 +8,13 @@ BLACK = (0, 0, 0)
 RED = (255, 0, 0)
 GREEN = (0, 255, 0)
 YELLOW = (255, 255, 0)
+ORANGE = (255, 165, 0)
 BLUE = (0, 0, 255)
 PURPLE = (147, 51, 234)
+DARK_PURPLE = (87, 30, 140)
+PINK = (255, 192, 203)
 BROWN = (139, 90, 43)
+DARK_BROWN = (101, 67, 33)
 GOLD = (255, 215, 0)
 SKY_BLUE = (135, 206, 235)
 GRAY = (128, 128, 128)
@@ -37,7 +41,7 @@ BOSS_IMAGE = None
 ENEMY_IMAGE = ENEMY_IDLE_SPRITE # Default to idle sprite
 
 # Sound effects
-SHOOT_SOUND_PATH = "assets/audio/Cuphead peashooter sound.mp3"
+SHOOT_SOUND_PATH = None
 SHOOT_SOUND = None
 HIT_SOUND = None
 COIN_SOUND = None
