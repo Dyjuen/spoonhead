@@ -82,45 +82,62 @@ class ShopScreen:
             item_id = item['id']
             item_data = item['data']
             button = item['button']
+            current_level = self.upgrades.get(item_id, 0)
+            max_level = item_data['max_level']
 
             # Draw button background and border
             button.draw(self.screen, pygame.mouse.get_pos())
             pygame.draw.rect(self.screen, GOLD, button.rect, 2)
             
-            # Display item name, description, and price
+            # Display item name and description
             self.draw_text(item_data['name'], 36, button.rect.centerx, button.rect.y + 30)
             self.draw_text(item_data['description'], 24, button.rect.centerx, button.rect.y + 70)
-            self.draw_text(f"Price: {item_data['price']}", 28, button.rect.centerx, button.rect.y + 110)
 
-            if self.upgrades[item_id]:
-                s = pygame.Surface((button.rect.width, button.rect.height), pygame.SRCALPHA)
-                s.fill((0, 0, 0, 128))
-                self.screen.blit(s, button.rect.topleft)
-                self.draw_text("Purchased", 36, button.rect.centerx, button.rect.centery, GREEN)
+            if current_level >= max_level:
+                # Item is maxed out
+                if max_level == 1:
+                    self.draw_text("Purchased", 36, button.rect.centerx, button.rect.centery + 40, GREEN)
+                else:
+                    self.draw_text("Max Level", 36, button.rect.centerx, button.rect.centery + 40, GREEN)
+                self.draw_text(f"Level: {current_level}/{max_level}", 28, button.rect.centerx, button.rect.y + 110)
             else:
-                 buy_button = Button(
+                # Item can be purchased
+                price = item_data['prices'][current_level]
+                self.draw_text(f"Price: {price}", 28, button.rect.centerx, button.rect.y + 110)
+                if max_level > 1:
+                    self.draw_text(f"Level: {current_level}/{max_level}", 24, button.rect.centerx, button.rect.y + 140)
+
+                can_afford = self.total_coins >= price
+                buy_button_color = GREEN if can_afford else GRAY
+                buy_button = Button(
                     button.rect.centerx - 50,
-                    button.rect.y + 140,
+                    button.rect.y + 150,
                     100,
                     30,
                     "Buy",
-                    GREEN,
+                    buy_button_color,
                     PURPLE
                 )
-                 buy_button.draw(self.screen, pygame.mouse.get_pos())
+                buy_button.draw(self.screen, pygame.mouse.get_pos())
     
     def handle_event(self, event):
         mouse_pos = pygame.mouse.get_pos()
         for item in self.item_buttons:
-            if not self.upgrades[item['id']]:
+            item_id = item['id']
+            item_data = item['data']
+            current_level = self.upgrades.get(item_id, 0)
+            max_level = item_data['max_level']
+
+            if current_level < max_level:
+                price = item_data['prices'][current_level]
                 buy_button_rect = pygame.Rect(
                     item['button'].rect.centerx - 50,
-                    item['button'].rect.y + 140,
+                    item['button'].rect.y + 150,
                     100,
                     30
                 )
                 if buy_button_rect.collidepoint(mouse_pos) and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                     if self.total_coins >= item['data']['price']:
+                    if self.total_coins >= price:
                         return item['id']
         return None
 

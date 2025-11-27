@@ -5,18 +5,35 @@ SHOP_ITEMS = {
         'id': 'spread_shot',
         'name': 'Spread Shot',
         'description': 'Fire three projectiles in a cone.',
-        'price': 25,
+        'prices': [25],
+        'max_level': 1,
     },
     'burst_shot': {
         'id': 'burst_shot',
         'name': 'Burst Shot',
         'description': 'Fire three quick shots at once.',
-        'price': 40,
+        'prices': [40],
+        'max_level': 1,
     },
     'health_up': {
         'id': 'health_up',
         'name': 'Health Upgrade',
         'description': 'Permanently increases max health by 25.',
-        'price': 50,
+        'prices': [50, 80, 120],
+        'max_level': 3,
+    },
+    'double_jump': {
+        'id': 'double_jump',
+        'name': 'Double Jump',
+        'description': 'Allows you to jump a second time in mid-air.',
+        'prices': [75],
+        'max_level': 1,
+    },
+    'damage_up': {
+        'id': 'damage_up',
+        'name': 'Damage Upgrade',
+        'description': 'Increases shot damage by 5.',
+        'prices': [60, 100, 150],
+        'max_level': 3,
     }
 }

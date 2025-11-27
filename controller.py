@@ -1,21 +1,29 @@
 import pygame
 
 class XboxController:
-    """Xbox 360 Controller handler for game input"""
+    """Xbox 360 Controller handler for game input - supports up to 2 controllers"""
     
-    def __init__(self):
+    def __init__(self, controller_index=0):
         pygame.joystick.init()
+        self.controller_index = controller_index
         self.joystick = None
         self.connected = False
+        self.active = False  # For player 2, needs to press button to activate
         
-        # Try to connect to first available controller
-        if pygame.joystick.get_count() > 0:
-            self.joystick = pygame.joystick.Joystick(0)
+        # Try to connect to controller at specified index
+        if pygame.joystick.get_count() > controller_index:
+            self.joystick = pygame.joystick.Joystick(controller_index)
             self.joystick.init()
             self.connected = True
-            print(f"Controller connected: {self.joystick.get_name()}")
+            # Player 1 (index 0) is always active, Player 2 needs to join
+            self.active = (controller_index == 0)
+            print(f"Controller {controller_index} connected: {self.joystick.get_name()}")
+            print(f"  Buttons: {self.joystick.get_numbuttons()}, Axes: {self.joystick.get_numaxes()}, Hats: {self.joystick.get_numhats()}")
+            if controller_index > 0:
+                print(f"  -> Press START (or any button) to join as Player {controller_index + 1}")
         else:
-            print("No controller found. Using keyboard controls.")
+            if controller_index == 0:
+                print("No controller found. Using keyboard controls.")
         
         # Button mappings for Xbox 360 controller
         self.BUTTON_A = 0       # Jump
@@ -41,6 +49,23 @@ class XboxController:
         # Cooldowns
         self.shoot_cooldown = 0.15
         self.last_shoot = 0
+        self.switch_weapon_cooldown = 0.25
+        self.last_switch = 0
+        self.ultimate_cooldown = 1.0 # Add ultimate cooldown
+        self.last_ultimate = 0
+
+    def check_join_input(self):
+        """Check if player is trying to join (for Player 2+)"""
+        if not self.connected or self.active:
+            return False
+            
+        # Check if any button is pressed to join
+        for i in range(self.joystick.get_numbuttons()):
+            if self.joystick.get_button(i):
+                self.active = True
+                print(f"Player {self.controller_index + 1} has joined!")
+                return True
+        return False
         
     def apply_deadzone(self, value):
         """Apply deadzone to analog stick input"""
@@ -52,6 +77,10 @@ class XboxController:
         """Get controller input and return game actions"""
         import time
         import math
+        
+        # CRITICAL: Update joystick state!
+        pygame.event.pump()
+        
         current_time = time.time()
         
         actions = {
@@ -59,38 +88,52 @@ class XboxController:
             'shoot': False,
             'shoot_direction': 'horizontal',
             'dash': False,
-            'jump': False
+            'jump': False,
+            'switch_weapon': False,
+            'activate_ultimate': False # New action for ultimate
         }
         
+        # If controller is connected but not active yet, check for join input
+        if self.connected and not self.active:
+            self.check_join_input()
+            return actions  # Return neutral actions if not active yet
+        
         if not self.connected:
-            # Fallback to keyboard if no controller
-            keys = pygame.key.get_pressed()
-            
-            # Movement
-            if keys[pygame.K_LEFT] or keys[pygame.K_a]:
-                actions['move_x'] = 0.0
-            elif keys[pygame.K_RIGHT] or keys[pygame.K_d]:
-                actions['move_x'] = 1.0
-            
-            # Jump
-            if keys[pygame.K_SPACE] or keys[pygame.K_w]:
-                actions['jump'] = True
-            
-            # Shoot
-            if keys[pygame.K_j] or keys[pygame.K_LCTRL]:
-                if current_time - self.last_shoot > self.shoot_cooldown:
-                    actions['shoot'] = True
-                    self.last_shoot = current_time
-            
-            # Dash
-            if keys[pygame.K_LSHIFT] or keys[pygame.K_k]:
-                actions['dash'] = True
-            
-            # Shoot direction with arrow keys
-            if keys[pygame.K_UP]:
-                actions['shoot_direction'] = 'up'
-            elif keys[pygame.K_DOWN]:
-                actions['shoot_direction'] = 'down'
+            # Fallback to keyboard if no controller (only for Player 1)
+            if self.controller_index == 0:
+                keys = pygame.key.get_pressed()
+                
+                # Movement
+                if keys[pygame.K_LEFT] or keys[pygame.K_a]:
+                    actions['move_x'] = 0.0
+                elif keys[pygame.K_RIGHT] or keys[pygame.K_d]:
+                    actions['move_x'] = 1.0
+                
+                # Jump
+                if keys[pygame.K_SPACE] or keys[pygame.K_w]:
+                    actions['jump'] = True
+                
+                # Shoot
+                if keys[pygame.K_j] or keys[pygame.K_LCTRL]:
+                    if current_time - self.last_shoot > self.shoot_cooldown:
+                        actions['shoot'] = True
+                        self.last_shoot = current_time
+
+                # Switch weapon
+                if keys[pygame.K_q]: # Q for switch weapon (temporary keyboard mapping)
+                    if current_time - self.last_switch > self.switch_weapon_cooldown:
+                        actions['switch_weapon'] = True
+                        self.last_switch = current_time
+                
+                # Dash
+                if keys[pygame.K_LSHIFT] or keys[pygame.K_k]:
+                    actions['dash'] = True
+                
+                # Shoot direction with arrow keys
+                if keys[pygame.K_UP]:
+                    actions['shoot_direction'] = 'up'
+                elif keys[pygame.K_DOWN]:
+                    actions['shoot_direction'] = 'down'
             
             return actions
         
@@ -135,11 +178,23 @@ class XboxController:
             if current_time - self.last_shoot > self.shoot_cooldown:
                 actions['shoot'] = True
                 self.last_shoot = current_time
+
+        # X button for switch weapon
+        if self.joystick.get_button(self.BUTTON_Y): # Changed Y to switch weapon for consistency
+            if current_time - self.last_switch > self.switch_weapon_cooldown:
+                actions['switch_weapon'] = True
+                self.last_switch = current_time
         
         # X button for dash
         if self.joystick.get_button(self.BUTTON_X):
             actions['dash'] = True
         
+        # LB button for ultimate
+        if self.joystick.get_button(self.BUTTON_LB):
+            if current_time - self.last_ultimate > self.ultimate_cooldown:
+                actions['activate_ultimate'] = True
+                self.last_ultimate = current_time
+
         # D-Pad as alternative for shoot direction (override)
         hat = self.joystick.get_hat(0) if self.joystick.get_numhats() > 0 else (0, 0)
         if hat[1] == 1:  # Up
@@ -160,5 +215,76 @@ class XboxController:
     def get_status_text(self):
         """Get status text for display"""
         if not self.connected:
-            return "Keyboard: WASD/Arrows=Move, Space=Jump, J/Ctrl=Shoot, Shift=Dash"
-        return "Xbox: Left Stick=Move+Aim, A=Jump, B=Shoot, X=Dash"
+            if self.controller_index == 0:
+                return "Keyboard: WASD/Arrows=Move, Space=Jump, J/Ctrl=Shoot, Shift=Dash"
+            return ""
+        
+        if not self.active:
+            return f"Controller {self.controller_index + 1}: Press any button to join"
+            
+        return f"P{self.controller_index + 1} Xbox: Left Stick=Move+Aim, A=Jump, B=Shoot, X=Dash"
+    
+    @staticmethod
+    def get_available_controllers():
+        """Get number of available controllers"""
+        pygame.joystick.init()
+        return pygame.joystick.get_count()
+
+
+class ControllerManager:
+    """Manages multiple controllers for local multiplayer"""
+    
+    def __init__(self, max_players=2):
+        self.max_players = max_players
+        self.controllers = []
+        self.initialize_controllers()
+    
+    def initialize_controllers(self):
+        """Initialize all available controllers"""
+        available = XboxController.get_available_controllers()
+        num_controllers = min(available, self.max_players)
+        
+        print(f"\n=== Controller Setup ===")
+        print(f"Available controllers: {available}")
+        print(f"Initializing {num_controllers} controller(s)")
+        
+        for i in range(self.max_players):
+            controller = XboxController(i)
+            self.controllers.append(controller)
+        
+        print("========================\n")
+    
+    def get_active_controllers(self):
+        """Get list of active (joined) controllers"""
+        return [ctrl for ctrl in self.controllers if ctrl.active]
+    
+    def get_controller(self, index):
+        """Get controller at specific index"""
+        if 0 <= index < len(self.controllers):
+            return self.controllers[index]
+        return None
+    
+    def update(self):
+        """Update all controllers - check for join inputs"""
+        for controller in self.controllers:
+            if controller.connected and not controller.active:
+                controller.check_join_input()
+    
+    def get_all_actions(self):
+        """Get actions from all active controllers"""
+        actions_list = []
+        for i, controller in enumerate(self.controllers):
+            if controller.active or (controller.controller_index == 0 and not controller.connected):
+                actions = controller.get_actions()
+                actions['player_id'] = i
+                actions_list.append(actions)
+        return actions_list
+    
+    def get_status_texts(self):
+        """Get status text for all controllers"""
+        texts = []
+        for controller in self.controllers:
+            text = controller.get_status_text()
+            if text:
+                texts.append(text)
+        return texts

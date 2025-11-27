@@ -64,19 +64,43 @@ class Player(pygame.sprite.Sprite):
         self.shoot_cooldown = 250
         self.last_shot = 0
         self.facing_right = True
+        self.shot_damage = 10
 
+        # Weapon switching
+        self.unlocked_weapons = ['default']
+        self.current_weapon_index = 0
+        self.double_jump_unlocked = False
+        self.was_on_ground = False
+
+        # Power-ups
+        self.damage_boost_active = False
+        self.damage_boost_timer = 0
+        self.power_up_duration = 10000 # 10 seconds
+
+        # Ultimate ability
+        self.ultimate_meter = 0
+        self.ultimate_max_meter = 5 # 5 kills to charge ultimate
+        self.ultimate_ready = False
+        
         self.apply_upgrades()
         self.health = self.max_health
 
     def apply_upgrades(self):
-        self.health_upgrade = self.upgrades.get('health_up', False)
-        self.spread_shot = self.upgrades.get('spread_shot', False)
-        self.burst_shot = self.upgrades.get('burst_shot', False)
+        self.max_health += 25 * self.upgrades.get('health_up', 0)
+        self.shot_damage += 5 * self.upgrades.get('damage_up', 0)
 
-        if self.health_upgrade:
-            self.max_health += 25
+        if self.upgrades.get('spread_shot', 0) > 0 and 'spread_shot' not in self.unlocked_weapons:
+            self.unlocked_weapons.append('spread_shot')
 
-        
+        if self.upgrades.get('burst_shot', 0) > 0 and 'burst_shot' not in self.unlocked_weapons:
+            self.unlocked_weapons.append('burst_shot')
+
+        if self.upgrades.get('double_jump', 0) > 0:
+            self.double_jump_unlocked = True
+
+    def switch_weapon(self):
+        self.current_weapon_index = (self.current_weapon_index + 1) % len(self.unlocked_weapons)
+        print(f"Switched to: {self.unlocked_weapons[self.current_weapon_index]}") # For debugging
 
     def load_animations(self):
         self.animations = {'idle': [], 'run': [], 'jump': [], 'double_jump': []}
@@ -115,6 +139,7 @@ class Player(pygame.sprite.Sprite):
             self.frame_index = 0
 
     def update(self, move_input, platforms):
+        sfx_events = []
         if not self.on_ground:
             if self.vy > 0 and self.action != 'double_jump': self.set_action('jump') # Falling
         elif move_input is not None and (move_input < 0.4 or move_input > 0.6): self.set_action('run')
@@ -145,19 +170,38 @@ class Player(pygame.sprite.Sprite):
                 self.vy = 0
                 self.on_ground = True
                 self.jumps_made = 0 # Reset jump counter on landing
-                if isinstance(platform, MovingPlatform): self.rect.x += platform.speed * platform.direction
+                if isinstance(platform, MovingPlatform):
+                    if platform.move_axis == 'x':
+                        self.rect.x += platform.speed * platform.direction
+                    # The y-movement is implicitly handled by `self.rect.bottom = platform.rect.top`
+                    # when the update order is correct.
             elif self.vy < 0:
                 self.rect.top = platform.rect.bottom
                 self.vy = 0
         
         self.animate()
 
+        if self.on_ground and not self.was_on_ground:
+            sfx_events.append('landing')
+
+        self.was_on_ground = self.on_ground
+        
+        # Power-up timer
+        if self.damage_boost_active and pygame.time.get_ticks() - self.damage_boost_timer > self.power_up_duration:
+            self.damage_boost_active = False
+            print("Damage boost deactivated") # for debugging
+            
+        return sfx_events
+
     def jump(self):
-        if self.jumps_made < 2:
+        max_jumps = 2 if self.double_jump_unlocked else 1
+        if self.jumps_made < max_jumps:
             self.vy = self.jump_power
             self.on_ground = False
             self.set_action('double_jump' if self.jumps_made == 1 else 'jump')
             self.jumps_made += 1
+            return 'jump'
+        return None
 
     def dash(self):
         current_time = pygame.time.get_ticks()
@@ -169,61 +213,102 @@ class Player(pygame.sprite.Sprite):
         if current_time - self.last_shot > self.shoot_cooldown:
             self.last_shot = current_time
             projectiles = pygame.sprite.Group()
+            sfx_name = 'default_shot' # Default sound
+            
+            damage = self.shot_damage * 2 if self.damage_boost_active else self.shot_damage
             
             direction = 1 if self.facing_right else -1
-            
-            if self.burst_shot:
-                for i in range(3):
-                    # Slight delay for burst would be complex, so we spawn them together
-                    # with a slight offset to simulate a burst.
-                    proj = Projectile(self.rect.centerx + (i * 15 * direction), self.rect.centery, 12 * direction, 0)
-                    projectiles.add(proj)
-                return projectiles
+            current_weapon = self.unlocked_weapons[self.current_weapon_index]
 
-            if self.spread_shot:
+            if current_weapon == 'burst_shot':
+                sfx_name = 'burst_shot'
+                for i in range(3):
+                    proj = Projectile(self.rect.centerx + (i * 15 * direction), self.rect.centery, 12 * direction, 0, damage=damage)
+                    projectiles.add(proj)
+                return projectiles, sfx_name
+
+            if current_weapon == 'spread_shot':
+                sfx_name = 'spread_shot'
                 angles = [-15, 0, 15] # Degrees
                 for angle in angles:
                     rad_angle = math.radians(angle)
-                    vx = 12 * direction * math.cos(rad_angle)
+                    # Adjust for facing direction
+                    if not self.facing_right:
+                        rad_angle = math.pi - rad_angle
+                    
+                    vx = 12 * math.cos(rad_angle)
                     vy = 12 * math.sin(rad_angle)
-                    projectiles.add(Projectile(self.rect.centerx, self.rect.centery, vx, vy))
-                return projectiles
+                    projectiles.add(Projectile(self.rect.centerx, self.rect.centery, vx, vy, damage=damage))
+                return projectiles, sfx_name
 
             # Default shot
             speed = 12
             sqrt2_half = 0.7071 # Approximation of sin(45) and cos(45)
 
             if shoot_direction == 'up':
-                projectiles.add(Projectile(self.rect.centerx, self.rect.centery, 0, -speed))
+                projectiles.add(Projectile(self.rect.centerx, self.rect.centery, 0, -speed, damage=damage))
             elif shoot_direction == 'down':
-                projectiles.add(Projectile(self.rect.centerx, self.rect.centery, 0, speed))
+                projectiles.add(Projectile(self.rect.centerx, self.rect.centery, 0, speed, damage=damage))
             elif shoot_direction == 'up_right':
-                projectiles.add(Projectile(self.rect.centerx, self.rect.centery, speed * sqrt2_half, -speed * sqrt2_half))
+                projectiles.add(Projectile(self.rect.centerx, self.rect.centery, speed * sqrt2_half, -speed * sqrt2_half, damage=damage))
             elif shoot_direction == 'up_left':
-                projectiles.add(Projectile(self.rect.centerx, self.rect.centery, -speed * sqrt2_half, -speed * sqrt2_half))
+                projectiles.add(Projectile(self.rect.centerx, self.rect.centery, -speed * sqrt2_half, -speed * sqrt2_half, damage=damage))
             elif shoot_direction == 'down_right':
-                projectiles.add(Projectile(self.rect.centerx, self.rect.centery, speed * sqrt2_half, speed * sqrt2_half))
+                projectiles.add(Projectile(self.rect.centerx, self.rect.centery, speed * sqrt2_half, speed * sqrt2_half, damage=damage))
             elif shoot_direction == 'down_left':
-                projectiles.add(Projectile(self.rect.centerx, self.rect.centery, -speed * sqrt2_half, speed * sqrt2_half))
+                projectiles.add(Projectile(self.rect.centerx, self.rect.centery, -speed * sqrt2_half, speed * sqrt2_half, damage=damage))
             elif shoot_direction == 'left':
-                 projectiles.add(Projectile(self.rect.centerx, self.rect.centery, -speed, 0))
+                 projectiles.add(Projectile(self.rect.centerx, self.rect.centery, -speed, 0, damage=damage))
             elif shoot_direction == 'right':
-                 projectiles.add(Projectile(self.rect.centerx, self.rect.centery, speed, 0))
+                 projectiles.add(Projectile(self.rect.centerx, self.rect.centery, speed, 0, damage=damage))
             else: # horizontal
-                projectiles.add(Projectile(self.rect.centerx, self.rect.centery, speed * direction, 0))
+                projectiles.add(Projectile(self.rect.centerx, self.rect.centery, speed * direction, 0, damage=damage))
             
-            
-            return projectiles
-        return None
+            return projectiles, sfx_name
+        return None, None
 
     def take_damage(self, amount):
         self.health -= amount
         if self.health <= 0: self.health = 0
 
+    def activate_power_up(self, power_up_type):
+        if power_up_type == 'damage_boost':
+            self.damage_boost_active = True
+            self.damage_boost_timer = pygame.time.get_ticks()
+            print("Damage boost activated!") # for debugging
+
+    def increase_ultimate_meter(self):
+        if not self.ultimate_ready:
+            self.ultimate_meter += 1
+            if self.ultimate_meter >= self.ultimate_max_meter:
+                self.ultimate_ready = True
+                print("Ultimate ready!") # for debugging
+
+    def activate_ultimate(self):
+        if self.ultimate_ready:
+            self.ultimate_meter = 0
+            self.ultimate_ready = False
+            print("Ultimate activated! Massive shot fired!") # for debugging
+            # Create a massive projectile
+            # For simplicity, let's make it deal a fixed high damage and be larger
+            massive_damage = 50
+            massive_speed = 15
+            direction = 1 if self.facing_right else -1
+            # Adjust projectile's appearance or properties for massive shot if needed
+            proj = Projectile(self.rect.centerx, self.rect.centery, massive_speed * direction, 0, damage=massive_damage)
+            # You might want to make this projectile visually different (e.g., larger sprite, different color)
+            # This would require modifying the Projectile class or creating a new UltimateProjectile class.
+            # For now, we'll just use the regular Projectile class with higher damage.
+            proj.image = pygame.transform.scale(proj.image, (40, 20)) # Example: make it bigger
+            return proj
+        return None
+
+
 class Enemy(pygame.sprite.Sprite):
     """Enemy that patrols and shoots, with NO flashing effect."""
-    def __init__(self, x, y, patrol_distance=100, speed=2, shoot_cooldown=2.0):
+    def __init__(self, x, y, player, patrol_distance=100, speed=2, shoot_cooldown=2.0):
         super().__init__()
+        self.player = player
         self.load_animations()
         self.action = 'walk'
         self.frame_index = 0
@@ -276,7 +361,9 @@ class Enemy(pygame.sprite.Sprite):
 
     def take_damage(self, amount):
         self.health -= amount
-        if self.health <= 0: self.kill()
+        if self.health <= 0:
+            self.kill()
+            self.player.increase_ultimate_meter()
 
 class EnemyProjectile(pygame.sprite.Sprite):
     def __init__(self, x, y, vx, vy):
@@ -288,7 +375,7 @@ class EnemyProjectile(pygame.sprite.Sprite):
 
     def update(self):
         self.rect.move_ip(self.vx, self.vy); self.lifetime -= 1
-        if self.lifetime <= 0 or not self.rect.colliderect(pygame.Rect(0,0,SCREEN_WIDTH,SCREEN_HEIGHT)): self.kill()
+        if self.lifetime <= 0 or not self.rect.colliderect(pygame.Rect(-100,-100,10000,SCREEN_HEIGHT+200)): self.kill()
 
 class Projectile(pygame.sprite.Sprite):
     animation_frames_right, animation_frames_left = [], []
@@ -306,20 +393,21 @@ class Projectile(pygame.sprite.Sprite):
             print("Warning: Player projectile images not found."); surf = pygame.Surface(bullet_size, pygame.SRCALPHA); surf.fill(YELLOW)
             Projectile.animation_frames_right = [surf]*2; Projectile.animation_frames_left = [surf]*2
 
-    def __init__(self, x, y, vx, vy):
+    def __init__(self, x, y, vx, vy, damage=10):
         super().__init__()
         direction = 1 if vx >= 0 else -1
         self.anim_frames = Projectile.animation_frames_right if direction == 1 else Projectile.animation_frames_left
         self.frame_index, self.last_frame_update = 0, pygame.time.get_ticks()
         self.image = self.anim_frames[self.frame_index]; self.rect = self.image.get_rect(center=(x, y))
         self.vx, self.vy = vx, vy
+        self.damage = damage
 
     def update(self):
         if pygame.time.get_ticks() - self.last_frame_update > 100:
             self.last_frame_update = pygame.time.get_ticks()
             self.frame_index = (self.frame_index + 1) % len(self.anim_frames); self.image = self.anim_frames[self.frame_index]
         self.rect.move_ip(self.vx, self.vy)
-        if not self.rect.colliderect(pygame.Rect(-100,-100,SCREEN_WIDTH+200,SCREEN_HEIGHT+200)): self.kill()
+        if not self.rect.colliderect(pygame.Rect(-100,-100,10000,SCREEN_HEIGHT+200)): self.kill()
 
 class Platform(pygame.sprite.Sprite):
     def __init__(self, x, y, width, height):
@@ -357,6 +445,42 @@ class BossGate(pygame.sprite.Sprite):
         pygame.draw.rect(self.image, GOLD, self.image.get_rect(), 5); font = pygame.font.Font(None, 30)
         self.image.blit(font.render("BOSS", True, WHITE), (15, 45)); self.rect = self.image.get_rect(center=(x, y))
 
+class PowerUpBox(pygame.sprite.Sprite):
+    def __init__(self, x, y, game):
+        super().__init__()
+        self.game = game
+        self.image = pygame.Surface((40, 40))
+        self.image.fill(BROWN)
+        pygame.draw.rect(self.image, DARK_BROWN, (0, 0, 40, 40), 5)
+        pygame.draw.line(self.image, DARK_BROWN, (10, 20), (30, 20), 5)
+        self.rect = self.image.get_rect(center=(x, y))
+        self.health = 20
+
+    def take_damage(self, amount):
+        self.health -= amount
+        if self.health <= 0:
+            self.kill()
+            power_up = PowerUp(self.rect.centerx, self.rect.centery, 'damage_boost')
+            self.game.all_sprites.add(power_up)
+            self.game.power_ups.add(power_up)
+
+class PowerUp(pygame.sprite.Sprite):
+    def __init__(self, x, y, power_up_type):
+        super().__init__()
+        self.power_up_type = power_up_type
+        self.image = pygame.Surface((25, 25), pygame.SRCALPHA)
+        if self.power_up_type == 'damage_boost':
+            self.image.fill(ORANGE)
+            pygame.draw.circle(self.image, RED, (12, 12), 10)
+        self.rect = self.image.get_rect(center=(x, y))
+        self.bob_offset = random.uniform(0, 2 * math.pi)
+        self.bob_range = 4
+        self.original_y = y
+
+    def update(self):
+        self.rect.y = self.original_y + int(math.sin(self.bob_offset) * self.bob_range)
+        self.bob_offset += 0.1
+
 class Boss(pygame.sprite.Sprite):
     def __init__(self, x, y, game, health=500, speed=3, shoot_interval=60, phases=3, boss_type=1):
         super().__init__(); self.game = game
@@ -374,7 +498,6 @@ class Boss(pygame.sprite.Sprite):
         self.pattern_counter, self.is_flashing, self.flash_timer, self.flash_duration = 0, False, 0, 150
 
     def update(self):
-        if self.health <= 0: return
         if self.max_phases>1 and self.health<self.max_health*0.66 and self.phase==1: self.phase,self.shoot_interval=2,self.base_shoot_interval*0.75
         elif self.max_phases>2 and self.health<self.max_health*0.33 and self.phase==2: self.phase,self.shoot_interval=3,self.base_shoot_interval*0.5
         self.rect.x+=self.vx; self.rect.y+=self.vy
@@ -433,7 +556,10 @@ class Boss(pygame.sprite.Sprite):
     def take_damage(self, amount):
         if self.is_flashing: return
         self.health -= amount
-        if self.health <= 0: self.kill(); return
+        if self.health <= 0:
+            self.health = 0
+            self.kill()
+            return
         self.is_flashing=True; self.flash_timer=pygame.time.get_ticks(); self.image=self.flash_image
 
 class BossProjectile(pygame.sprite.Sprite):
