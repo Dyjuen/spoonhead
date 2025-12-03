@@ -156,8 +156,13 @@ class Player(pygame.sprite.Sprite):
         
         self.rect.x += self.vx
         for platform in pygame.sprite.spritecollide(self, platforms, False):
-            if self.vx > 0: self.rect.right = platform.rect.left
-            elif self.vx < 0: self.rect.left = platform.rect.right
+            if self.vx > 0:
+                self.rect.right = platform.rect.left
+            elif self.vx < 0:
+                self.rect.left = platform.rect.right
+            # If colliding with a moving platform, get pushed
+            if isinstance(platform, MovingPlatform) and platform.move_axis == 'x':
+                self.rect.x += platform.speed * platform.direction
 
         self.vy += self.gravity
         if self.vy > 15: self.vy = 15
@@ -201,6 +206,8 @@ class Player(pygame.sprite.Sprite):
             self.set_action('double_jump' if self.jumps_made == 1 else 'jump')
             self.jumps_made += 1
             return 'jump'
+        elif not self.double_jump_unlocked and self.jumps_made >= 1:
+            print("DEBUG: Double jump not unlocked! Purchase it from the shop.")
         return None
 
     def dash(self):
@@ -276,6 +283,11 @@ class Player(pygame.sprite.Sprite):
             self.damage_boost_active = True
             self.damage_boost_timer = pygame.time.get_ticks()
             print("Damage boost activated!") # for debugging
+        elif power_up_type == 'health':
+            self.health += 25
+            if self.health > self.max_health:
+                self.health = self.max_health
+            print("Health boost activated!") # for debugging
 
     def increase_ultimate_meter(self):
         if not self.ultimate_ready:
@@ -295,6 +307,7 @@ class Player(pygame.sprite.Sprite):
             massive_speed = 15
             direction = 1 if self.facing_right else -1
             # Adjust projectile's appearance or properties for massive shot if needed
+            # There is no special animation for the ultimate, the projectile is just scaled up.
             proj = Projectile(self.rect.centerx, self.rect.centery, massive_speed * direction, 0, damage=massive_damage)
             # You might want to make this projectile visually different (e.g., larger sprite, different color)
             # This would require modifying the Projectile class or creating a new UltimateProjectile class.
@@ -460,7 +473,8 @@ class PowerUpBox(pygame.sprite.Sprite):
         self.health -= amount
         if self.health <= 0:
             self.kill()
-            power_up = PowerUp(self.rect.centerx, self.rect.centery, 'damage_boost')
+            power_up_type = random.choice(['damage_boost', 'health'])
+            power_up = PowerUp(self.rect.centerx, self.rect.centery, power_up_type)
             self.game.all_sprites.add(power_up)
             self.game.power_ups.add(power_up)
 
@@ -472,6 +486,10 @@ class PowerUp(pygame.sprite.Sprite):
         if self.power_up_type == 'damage_boost':
             self.image.fill(ORANGE)
             pygame.draw.circle(self.image, RED, (12, 12), 10)
+        elif self.power_up_type == 'health':
+            self.image.fill(GREEN)
+            pygame.draw.rect(self.image, WHITE, (10, 5, 5, 15))
+            pygame.draw.rect(self.image, WHITE, (5, 10, 15, 5))
         self.rect = self.image.get_rect(center=(x, y))
         self.bob_offset = random.uniform(0, 2 * math.pi)
         self.bob_range = 4

@@ -1,4 +1,5 @@
 import pygame
+from settings import PIXEL_FONT
 
 class Button:
     """Simple button class"""
@@ -8,7 +9,7 @@ class Button:
         self.color = color
         self.hover_color = hover_color
         self.text_color = text_color
-        self.font = pygame.font.Font(None, 40)
+        self.font = pygame.font.Font(PIXEL_FONT, 20)
 
     def draw(self, screen, mouse_pos):
         is_hovered = self.rect.collidepoint(mouse_pos)

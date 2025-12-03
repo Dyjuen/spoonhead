@@ -20,6 +20,9 @@ SKY_BLUE = (135, 206, 235)
 GRAY = (128, 128, 128)
 DARK_GRAY = (64, 64, 64)
 
+# Font
+PIXEL_FONT = "assets/font/PressStart2P.ttf"
+
 # --- Asset Placeholders ---
 # Replace these with paths to your own assets
 # Example: PLAYER_IMAGE = "assets/images/player.png"

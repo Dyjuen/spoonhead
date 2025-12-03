@@ -22,15 +22,17 @@ class Game:
         Projectile.load_images()
         pygame.display.set_caption("Spoonhead")
         self.clock = pygame.time.Clock()
-        self.running = True
+        self.running = True # Initialize self.running
         self.game_state = 'home_screen'
+        self.blink_timer = 0
+        self.show_start_text = True
 
         # Game settings
         self.volume = 1.0
         self.fullscreen = False
         self.paused = False
         self.walking_sound_playing = False
-        self.q_pressed = False
+        self.u_pressed = False
 
         self.unlocked_levels = 1
         self.total_coins = 0
@@ -41,6 +43,10 @@ class Game:
         self.controller = XboxController()
         self.camera_x = 0
         self.player = None
+
+        # Level selection
+        self.scroll_x = 0
+        self.level_cards = []
         
         self.load_assets()
         self.setup_buttons()
@@ -122,13 +128,10 @@ class Game:
         self.quit_button = Button(SCREEN_WIDTH/2 - 100, SCREEN_HEIGHT/2 + 20, 200, 50, "Quit Game", RED, PURPLE)
         self.settings_button = Button(SCREEN_WIDTH/2 - 100, SCREEN_HEIGHT/2 + 90, 200, 50, "Settings", GRAY, PURPLE)
         
-        self.level_buttons = []
-        for i in range(1, len(ALL_LEVELS) + 1):
-            y_pos = SCREEN_HEIGHT/2 - 100 + (i-1)*80
-            self.level_buttons.append(Button(SCREEN_WIDTH/2 - 150, y_pos, 300, 60, f"Level {i}", GREEN, PURPLE))
+        self.level_cards = []
 
-        self.shop_button = Button(SCREEN_WIDTH - 170, SCREEN_HEIGHT - 70, 150, 50, "Shop", GOLD, PURPLE)
-        self.back_button = Button(20, SCREEN_HEIGHT - 70, 150, 50, "Back", RED, PURPLE)
+        self.shop_button = Button(SCREEN_WIDTH - 170, 20, 150, 50, "Shop", GOLD, PURPLE)
+        self.back_button = Button(20, 20, 150, 50, "Back", RED, PURPLE)
 
         # Settings screen buttons
         self.volume_down_button = Button(SCREEN_WIDTH/2 - 150, 200, 50, 50, "-", RED, PURPLE)
@@ -222,7 +225,7 @@ class Game:
         pygame.mixer.music.play(-1)
 
     def draw_text(self, text, size, x, y, color=WHITE, align="center"):
-        font = pygame.font.Font(None, size)
+        font = pygame.font.Font(PIXEL_FONT, size)
         text_surface = font.render(text, True, color)
         text_rect = text_surface.get_rect(**{align: (x, y)})
         self.screen.blit(text_surface, text_rect)
@@ -237,8 +240,8 @@ class Game:
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_p and self.game_state in ['platformer', 'boss_fight']:
                     self.paused = not self.paused
-                if event.key == pygame.K_q and self.game_state in ['platformer', 'boss_fight'] and not self.paused:
-                    self.q_pressed = True
+                if event.key == pygame.K_u and self.game_state in ['platformer', 'boss_fight'] and not self.paused:
+                    self.u_pressed = True
 
             if self.paused:
                 if self.resume_button.is_clicked(event, mouse_pos):
@@ -262,17 +265,31 @@ class Game:
             elif self.game_state == 'game_over':
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_r: self.init_level(self.current_level)
             elif self.game_state == 'home_screen':
-                if self.start_button.is_clicked(event, mouse_pos): self.game_state = 'level_selection'
-                elif self.quit_button.is_clicked(event, mouse_pos): 
+                if self.start_button.is_clicked(event, mouse_pos):
+                    self.game_state = 'level_selection'
+                elif self.settings_button.is_clicked(event, mouse_pos):
+                    self.game_state = 'settings'
+                elif self.quit_button.is_clicked(event, mouse_pos):
                     self.save_game_data()
                     self.running = False
-                elif self.settings_button.is_clicked(event, mouse_pos): self.game_state = 'settings'
             elif self.game_state == 'level_selection':
                 if self.back_button.is_clicked(event, mouse_pos): 
                     self.game_state = 'home_screen'
                 if self.shop_button.is_clicked(event, mouse_pos): self.game_state = 'shop_screen'
-                for i, button in enumerate(self.level_buttons):
-                    if i < self.unlocked_levels and button.is_clicked(event, mouse_pos): self.init_level(i + 1)
+
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1: # Left click
+                        for card in self.level_cards:
+                            if card['rect'].collidepoint(mouse_pos) and card['id'] <= self.unlocked_levels:
+                                self.init_level(card['id'])
+                    elif event.button == 4: # Scroll up
+                        self.scroll_x -= 50
+                    elif event.button == 5: # Scroll down
+                        self.scroll_x += 50
+                
+                # Clamp scroll
+                max_scroll_x = (len(ALL_LEVELS) - 1) * 260 # Rough estimate
+                self.scroll_x = max(0, min(self.scroll_x, max_scroll_x))
             elif self.game_state == 'shop_screen':
                 if self.back_button.is_clicked(event, mouse_pos): self.game_state = 'level_selection'
                 
@@ -354,12 +371,12 @@ class Game:
         if actions.get('switch_weapon'):
             self.player.switch_weapon()
 
-        if self.q_pressed and self.player.ultimate_ready:
+        if self.u_pressed and self.player.ultimate_ready:
             ultimate_proj = self.player.activate_ultimate()
             if ultimate_proj:
                 self.all_sprites.add(ultimate_proj)
                 self.projectiles.add(ultimate_proj)
-            self.q_pressed = False # Reset the flag after processing
+            self.u_pressed = False # Reset the flag after processing
 
         sfx_events = self.player.update(actions.get('move_x'), self.platforms)
         if sfx_events:
@@ -465,7 +482,7 @@ class Game:
             # Border
             pygame.draw.rect(self.screen, WHITE, (x, y, bar_width, bar_height), 2)
             
-            self.draw_text("BOSS HEALTH", 24, SCREEN_WIDTH / 2, y + bar_height / 2, WHITE)
+            self.draw_text("BOSS HEALTH", 18, SCREEN_WIDTH / 2, y + bar_height / 2, WHITE)
 
     def draw(self):
         mouse_pos = pygame.mouse.get_pos()
@@ -473,32 +490,76 @@ class Game:
         self.screen.blit(current_bg, (0, 0))
 
         if self.game_state == 'home_screen':
-            self.draw_text("Spoonhead", 100, SCREEN_WIDTH/2, SCREEN_HEIGHT/4, GOLD)
-            self.start_button.draw(self.screen, pygame.mouse.get_pos())
-            self.quit_button.draw(self.screen, pygame.mouse.get_pos())
-            self.settings_button.draw(self.screen, pygame.mouse.get_pos())
+            self.draw_text("Spoonhead", 60, SCREEN_WIDTH/2, SCREEN_HEIGHT/4, GOLD)
+            
+            # Draw buttons
+            self.start_button.draw(self.screen, mouse_pos)
+            self.settings_button.draw(self.screen, mouse_pos)
+            self.quit_button.draw(self.screen, mouse_pos)
         elif self.game_state == 'level_selection':
-            self.draw_text("Select Level", 80, SCREEN_WIDTH/2, 60, GOLD); self.draw_text(f"Total Coins: {self.total_coins}", 40, SCREEN_WIDTH/2, 120, GOLD)
-            for i, button in enumerate(self.level_buttons):
-                button.text = f"Level {i+1}: {ALL_LEVELS[i+1]['name']}" if i < self.unlocked_levels else f"Level {i+1} (Locked)"
-                button.color = GREEN if i < self.unlocked_levels else GRAY
-                button.draw(self.screen, pygame.mouse.get_pos())
-            self.back_button.draw(self.screen, pygame.mouse.get_pos()); self.shop_button.draw(self.screen, pygame.mouse.get_pos())
+            self.draw_text("Select Level", 40, SCREEN_WIDTH/2, 80, GOLD)
+            self.draw_text(f"Total Coins: {self.total_coins}", 20, SCREEN_WIDTH/2, 140, GOLD)
+
+            self.level_cards = []
+            card_width, card_height = 220, 300
+            padding = 40
+            start_x = SCREEN_WIDTH / 2 - card_width / 2
+            
+            for i, (level_num, level_data) in enumerate(ALL_LEVELS.items()):
+                card_x = start_x + (i * (card_width + padding)) - self.scroll_x
+                card_rect = pygame.Rect(card_x, SCREEN_HEIGHT / 2 - card_height / 2, card_width, card_height)
+                self.level_cards.append({'id': level_num, 'rect': card_rect})
+
+                is_unlocked = level_num <= self.unlocked_levels
+                
+                # Hover effect
+                is_hovered = card_rect.collidepoint(mouse_pos) and is_unlocked
+                
+                card_color = DARK_GRAY if is_unlocked else BLACK
+                border_color = YELLOW if is_hovered else (GOLD if is_unlocked else GRAY)
+
+                pygame.draw.rect(self.screen, card_color, card_rect, border_radius=15)
+                pygame.draw.rect(self.screen, border_color, card_rect, 3, border_radius=15)
+
+                # Placeholder for thumbnail
+                thumb_rect = pygame.Rect(card_x + 20, card_rect.y + 20, card_width - 40, 120)
+                pygame.draw.rect(self.screen, (50, 50, 50), thumb_rect)
+                self.draw_text(str(level_num), 50, thumb_rect.centerx, thumb_rect.centery, border_color)
+
+                self.draw_text(level_data['name'], 18, card_rect.centerx, card_rect.y + 180, WHITE)
+
+                if not is_unlocked:
+                    lock_overlay = pygame.Surface((card_width, card_height), pygame.SRCALPHA)
+                    lock_overlay.fill((0, 0, 0, 180))
+                    self.screen.blit(lock_overlay, card_rect.topleft)
+                    self.draw_text("Locked", 30, card_rect.centerx, card_rect.centery, RED)
+
+            self.back_button.draw(self.screen, pygame.mouse.get_pos())
+            self.shop_button.draw(self.screen, pygame.mouse.get_pos())
         elif self.game_state == 'shop_screen':
             self.shop_screen.draw()
             self.back_button.draw(self.screen, pygame.mouse.get_pos())
         elif self.game_state == 'settings':
-            self.draw_text("Settings", 80, SCREEN_WIDTH/2, 60, GOLD)
+            self.draw_text("Settings", 60, SCREEN_WIDTH/2, 60, GOLD)
             
             # Volume control
-            self.draw_text("Volume", 40, SCREEN_WIDTH/2, 150, WHITE)
+            self.draw_text("Volume", 30, SCREEN_WIDTH/2, 150, WHITE)
             self.volume_down_button.draw(self.screen, mouse_pos)
-            self.draw_text(f"{int(self.volume * 100)}%", 50, SCREEN_WIDTH/2, 225, WHITE)
+            self.draw_text(f"{int(self.volume * 100)}%", 40, SCREEN_WIDTH/2, 225, WHITE)
             self.volume_up_button.draw(self.screen, mouse_pos)
 
             # Fullscreen toggle
             self.fullscreen_button.text = f"Mode: {'Fullscreen' if self.fullscreen else 'Windowed'}"
             self.fullscreen_button.draw(self.screen, mouse_pos)
+
+            # Power-up Legend
+            self.draw_text("Power-ups", 30, SCREEN_WIDTH/2, 400, GOLD)
+            self.draw_text("Damage Boost (Orange): Doubles your damage for 10 seconds.", 16, SCREEN_WIDTH/2, 440, WHITE)
+            self.draw_text("Health Boost (Green): Instantly restores 25 health.", 16, SCREEN_WIDTH/2, 470, WHITE)
+
+            # Gameplay Notes
+            self.draw_text("Gameplay Notes", 30, SCREEN_WIDTH/2, 520, GOLD)
+            self.draw_text("Double Jump is an upgrade! Purchase it in the Shop.", 16, SCREEN_WIDTH/2, 560, WHITE)
 
             self.back_button.draw(self.screen, pygame.mouse.get_pos())
         elif self.game_state in ['platformer', 'boss_fight', 'victory', 'game_over']:
@@ -522,17 +583,17 @@ class Game:
             if self.game_state in ['victory', 'game_over']:
                 overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA); overlay.fill((0, 0, 0, 128)); self.screen.blit(overlay, (0, 0))
                 if self.game_state == 'victory':
-                    self.draw_text("VICTORY!", 80, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 - 50, GOLD)
-                    if self.current_level == self.unlocked_levels - 1 and self.unlocked_levels <= len(ALL_LEVELS): self.draw_text(f"Level {self.unlocked_levels} Unlocked!", 40, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 60)
-                    self.draw_text("Press any key to continue", 30, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 100)
+                    self.draw_text("VICTORY!", 60, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 - 50, GOLD)
+                    if self.current_level == self.unlocked_levels - 1 and self.unlocked_levels <= len(ALL_LEVELS): self.draw_text(f"Level {self.unlocked_levels} Unlocked!", 30, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 60)
+                    self.draw_text("Press any key to continue", 20, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 100)
                 else:
-                    self.draw_text("GAME OVER", 80, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 - 30, RED); self.draw_text("Press R to Restart Level", 30, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 40)
+                    self.draw_text("GAME OVER", 60, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 - 30, RED); self.draw_text("Press R to Restart Level", 20, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 40)
         
         if self.paused:
             overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
             overlay.fill((0, 0, 0, 128))
             self.screen.blit(overlay, (0, 0))
-            self.draw_text("Paused", 80, SCREEN_WIDTH/2, SCREEN_HEIGHT/4, GOLD)
+            self.draw_text("Paused", 60, SCREEN_WIDTH/2, SCREEN_HEIGHT/4, GOLD)
             self.resume_button.draw(self.screen, pygame.mouse.get_pos())
             self.main_menu_button.draw(self.screen, pygame.mouse.get_pos())
 
@@ -547,20 +608,20 @@ class Game:
         current_health_rect = pygame.Rect(20, 20, current_health_width, 25)
         pygame.draw.rect(self.screen, GREEN, current_health_rect)
         
-        self.draw_text(f"Health: {self.player.health}", 24, 120, 32)
+        self.draw_text(f"Health: {self.player.health}", 18, 120, 32)
         
         # Coins
-        self.draw_text(f"Coins: {self.player.coins}", 30, SCREEN_WIDTH - 100, 30, GOLD)
+        self.draw_text(f"Coins: {self.player.coins}", 20, SCREEN_WIDTH - 100, 30, GOLD)
         
         # Current Weapon
         current_weapon_name = self.player.unlocked_weapons[self.player.current_weapon_index].replace('_', ' ').title()
-        self.draw_text(f"Weapon: {current_weapon_name}", 30, SCREEN_WIDTH - 100, 60, WHITE)
+        self.draw_text(f"Weapon: {current_weapon_name}", 20, SCREEN_WIDTH - 100, 60, WHITE)
 
         # Ultimate Meter
         if self.player.ultimate_ready:
-            self.draw_text("ULTIMATE READY!", 30, SCREEN_WIDTH / 2, 90, YELLOW)
+            self.draw_text("ULTIMATE READY!", 20, SCREEN_WIDTH / 2, 90, YELLOW)
         else:
-            self.draw_text(f"Ultimate: {self.player.ultimate_meter}/{self.player.ultimate_max_meter}", 30, SCREEN_WIDTH / 2, 90, WHITE)
+            self.draw_text(f"Ultimate: {self.player.ultimate_meter}/{self.player.ultimate_max_meter}", 20, SCREEN_WIDTH / 2, 90, WHITE)
 
     def run(self):
         while self.running:
