@@ -40,7 +40,8 @@ class Player(pygame.sprite.Sprite):
         self.image = self.animations[self.action][self.frame_index]
         self.rect = self.image.get_rect(center=(x, y))
         self.hitbox = pygame.Rect(0, 0, 20, 45)
-        self.hitbox.center = (self.rect.centerx - 5, self.rect.centery)
+        self.hitbox_offset_x = 10  # Offset sedikit mundur dari center
+        self.hitbox.center = (self.rect.centerx - self.hitbox_offset_x, self.rect.centery)
         
         self.max_health = 100
         self.coins = 0
@@ -161,7 +162,9 @@ class Player(pygame.sprite.Sprite):
             if platform.rect.colliderect(self.hitbox):
                 if self.vx > 0: self.hitbox.right = platform.rect.left
                 elif self.vx < 0: self.hitbox.left = platform.rect.right
-        self.rect.centerx = self.hitbox.centerx + 10
+        # Apply offset yang dinamis berdasarkan arah hadap
+        offset = self.hitbox_offset_x if self.facing_right else -self.hitbox_offset_x
+        self.rect.centerx = self.hitbox.centerx + offset
 
         self.vy += self.gravity
         if self.vy > 15: self.vy = 15
@@ -314,7 +317,7 @@ class Player(pygame.sprite.Sprite):
 
 
 class Enemy(pygame.sprite.Sprite):
-    """Enemy that patrols and shoots, with NO flashing effect."""
+    """Enemy that patrols and shoots, with flashing effect only when taking damage."""
     def __init__(self, x, y, player, patrol_distance=100, speed=2, shoot_cooldown=2.0):
         super().__init__()
         self.player = player
@@ -328,6 +331,9 @@ class Enemy(pygame.sprite.Sprite):
         self.start_x, self.patrol_distance = x, patrol_distance
         self.shoot_cooldown, self.last_shot_time = shoot_cooldown, time.time()
         self.detection_range = 400
+        # Flashing effect for damage
+        self.flash_timer = 0
+        self.original_image = self.image
 
     def load_animations(self):
         self.animations = {'walk': []}
@@ -351,6 +357,16 @@ class Enemy(pygame.sprite.Sprite):
             if self.direction == -1: new_image = pygame.transform.flip(new_image, True, False)
             center = self.rect.center
             self.image, self.rect = new_image, new_image.get_rect(center=center)
+            self.original_image = self.image
+        
+        # Apply flashing effect if taking damage
+        if self.flash_timer > 0:
+            self.flash_timer -= 1
+            # Flash every 100ms (alternating visible/invisible)
+            if (self.flash_timer // 5) % 2 == 0:
+                flash_image = self.original_image.copy()
+                flash_image.fill((255, 255, 255), special_flags=pygame.BLEND_ADD)
+                self.image = flash_image
 
     def update(self, player, all_sprites_group, enemy_projectiles_group):
         self.rect.x += self.speed * self.direction
@@ -370,6 +386,8 @@ class Enemy(pygame.sprite.Sprite):
 
     def take_damage(self, amount):
         self.health -= amount
+        # Trigger flash effect for 300ms
+        self.flash_timer = 30
         if self.health <= 0:
             self.kill()
             self.player.increase_ultimate_meter()
