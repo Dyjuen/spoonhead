@@ -571,6 +571,10 @@ class Game:
                     pygame.draw.rect(self.screen, (255, 0, 0), enemy.rect.move(-self.camera_x, 0), 1)
                 for proj in self.projectiles:
                     pygame.draw.rect(self.screen, (0, 255, 255), proj.rect.move(-self.camera_x, 0), 1)
+                
+                # DEBUG: Draw player collision box
+                if self.player and self.player.alive():
+                    pygame.draw.rect(self.screen, (0, 255, 0), self.player.hitbox.move(-self.camera_x, 0), 2)
 
             else: 
                 self.all_sprites.draw(self.screen)

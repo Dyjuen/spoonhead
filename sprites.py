@@ -39,6 +39,8 @@ class Player(pygame.sprite.Sprite):
         self.last_frame_update = pygame.time.get_ticks()
         self.image = self.animations[self.action][self.frame_index]
         self.rect = self.image.get_rect(center=(x, y))
+        self.hitbox = pygame.Rect(0, 0, 20, 45)
+        self.hitbox.center = (self.rect.centerx - 5, self.rect.centery)
         
         self.max_health = 100
         self.coins = 0
@@ -154,36 +156,30 @@ class Player(pygame.sprite.Sprite):
                 if move_input < 0.4: self.vx = -self.speed; self.facing_right = False
                 elif move_input > 0.6: self.vx = self.speed; self.facing_right = True
         
-        self.rect.x += self.vx
-        for platform in pygame.sprite.spritecollide(self, platforms, False):
-            if self.vx > 0:
-                self.rect.right = platform.rect.left
-            elif self.vx < 0:
-                self.rect.left = platform.rect.right
-            # If colliding with a moving platform, get pushed
-            if isinstance(platform, MovingPlatform) and platform.move_axis == 'x':
-                self.rect.x += platform.speed * platform.direction
+        self.hitbox.x += self.vx
+        for platform in platforms:
+            if platform.rect.colliderect(self.hitbox):
+                if self.vx > 0: self.hitbox.right = platform.rect.left
+                elif self.vx < 0: self.hitbox.left = platform.rect.right
+        self.rect.centerx = self.hitbox.centerx + 10
 
         self.vy += self.gravity
         if self.vy > 15: self.vy = 15
-        self.rect.y += self.vy
+        self.hitbox.y += self.vy
         self.on_ground = False
-
-        for platform in pygame.sprite.spritecollide(self, platforms, False):
-            if self.vy > 0:
-                self.rect.bottom = platform.rect.top
-                self.vy = 0
-                self.on_ground = True
-                self.jumps_made = 0 # Reset jump counter on landing
-                if isinstance(platform, MovingPlatform):
-                    if platform.move_axis == 'x':
-                        self.rect.x += platform.speed * platform.direction
-                    # The y-movement is implicitly handled by `self.rect.bottom = platform.rect.top`
-                    # when the update order is correct.
-            elif self.vy < 0:
-                self.rect.top = platform.rect.bottom
-                self.vy = 0
         
+        for platform in platforms:
+            if platform.rect.colliderect(self.hitbox):
+                if self.vy > 0:
+                    self.hitbox.bottom = platform.rect.top
+                    self.vy = 0
+                    self.on_ground = True
+                    self.jumps_made = 0
+                elif self.vy < 0:
+                    self.hitbox.top = platform.rect.bottom
+                    self.vy = 0
+        self.rect.centery = self.hitbox.centery
+
         self.animate()
 
         if self.on_ground and not self.was_on_ground:

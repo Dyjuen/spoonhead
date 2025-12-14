@@ -83,7 +83,8 @@ class ShopScreen:
 
             # Only draw if visible
             if button.rect.bottom > 150 and button.rect.top < SCREEN_HEIGHT:
-                                button.draw(self.screen, mouse_pos)                pygame.draw.rect(self.screen, GOLD, button.rect, 2)
+                button.draw(self.screen, mouse_pos)
+                pygame.draw.rect(self.screen, GOLD, button.rect, 2)
                 
                 # Display item name, description and level
                 self.draw_text(item_data['name'], 22, button.rect.x + 150, button.rect.y + 30,align='center')
