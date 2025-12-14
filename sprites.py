@@ -171,6 +171,8 @@ class Player(pygame.sprite.Sprite):
         self.hitbox.y += self.vy
         self.on_ground = False
         
+        # Track the moving platform the player is standing on
+        self.standing_on_moving = None
         for platform in platforms:
             if platform.rect.colliderect(self.hitbox):
                 if self.vy > 0:
@@ -178,9 +180,24 @@ class Player(pygame.sprite.Sprite):
                     self.vy = 0
                     self.on_ground = True
                     self.jumps_made = 0
+                    # Cek apakah platform adalah MovingPlatform
+                    if hasattr(platform, 'direction') and hasattr(platform, 'speed') and hasattr(platform, 'move_axis'):
+                        self.standing_on_moving = platform
                 elif self.vy < 0:
                     self.hitbox.top = platform.rect.bottom
                     self.vy = 0
+
+        # Jika berdiri di atas moving platform, ikutkan pergerakan platform
+        if self.on_ground and self.standing_on_moving is not None:
+            # Hitung delta gerak platform
+            plat = self.standing_on_moving
+            if plat.move_axis == 'x':
+                self.hitbox.x += plat.speed * plat.direction
+            else:
+                self.hitbox.y += plat.speed * plat.direction
+            # Update rect juga
+            self.rect.centerx = self.hitbox.centerx + (self.hitbox_offset_x if self.facing_right else -self.hitbox_offset_x)
+            self.rect.centery = self.hitbox.centery
         self.rect.centery = self.hitbox.centery
 
         self.animate()
