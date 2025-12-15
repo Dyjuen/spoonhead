@@ -1,6 +1,8 @@
 import pygame
 from ui import Button
 from settings import *
+from sprites import SpriteSheet
+import random
 
 TIER_COLORS = {
     "Common": GRAY,
@@ -24,27 +26,48 @@ class InventoryScreen:
 
         self.back_button = Button(20, 20, 150, 50, "Back", RED, PURPLE)
 
-        self.unlocked_characters = ['cyborg', 'biker', 'punk']  # All characters are selectable
+        # Unlocked characters should be passed from Game, not hardcoded here
+        # For now, it's hardcoded to allow selection in dev
+        self.unlocked_characters = ['cyborg', 'biker', 'punk']  
         
         # Load images
-        self.character_images = self._load_character_images()
+        self.character_animations = self._load_character_animations()
         self.gun_images = self._load_gun_images()
         self.lock_icon = self._create_lock_icon()
 
         self.scroll_y = 0
         self.gun_grid_rects = {}
 
-    def _load_character_images(self):
-        images = {}
+    def _load_character_animations(self):
+        animations = {}
+        player_size = (80, 80) # Size for inventory display
+
         for char_id, char_data in self.character_data.items():
+            animations[char_id] = {}
+            # Load idle animation (from sprite sheet)
             try:
-                img = pygame.image.load(char_data['idle']).convert_alpha()
-                images[char_id] = pygame.transform.scale(img, (80, 80))
-            except pygame.error:
-                img = pygame.Surface((80, 80), pygame.SRCALPHA)
-                img.fill(BLUE)
-                images[char_id] = img
-        return images
+                sheet = SpriteSheet(char_data['idle'])
+                # Assuming original sprite sheet frames are 48x48
+                frames = sheet.get_animation_frames(48, 48) 
+                animations[char_id]['idle'] = [pygame.transform.scale(frame, player_size) for frame in frames]
+            except (pygame.error, FileNotFoundError):
+                print(f"Warning: Could not load idle animation for {char_id}: {char_data['idle']}")
+                placeholder_frame = pygame.Surface(player_size, pygame.SRCALPHA); placeholder_frame.fill(BLUE)
+                animations[char_id]['idle'] = [placeholder_frame] * 4 # Fallback
+
+            # Load emote animations (single images)
+            if 'emotes' in char_data:
+                for i, emote_path in enumerate(char_data['emotes']):
+                    emote_key = f'emote_{i}'
+                    try:
+                        img = pygame.image.load(emote_path).convert_alpha()
+                        animations[char_id][emote_key] = [pygame.transform.scale(img, player_size)] # Single frame
+                    except (pygame.error, FileNotFoundError):
+                        print(f"Warning: Could not load emote animation for {char_id}: {emote_path}")
+                        placeholder_frame = pygame.Surface(player_size, pygame.SRCALPHA); placeholder_frame.fill(BLUE)
+                        animations[char_id][emote_key] = [placeholder_frame]
+
+        return animations
 
     def _load_gun_images(self):
         images = {}
@@ -93,8 +116,13 @@ class InventoryScreen:
             # Draw card
             pygame.draw.rect(self.screen, GRAY, char_rect, border_radius=10)
             
-            # Image - use the single idle image
-            char_img = self.character_images[char_id]
+            # Image - Animated character preview (always idle animation)
+            char_animations_dict = self.character_animations[char_id] # This is a dict of animation lists
+            
+            current_anim_key = 'idle' # Always play idle animation
+            current_animation_frames = char_animations_dict.get(current_anim_key, char_animations_dict['idle'])
+            frame_index = (pygame.time.get_ticks() // 150) % len(current_animation_frames) # Cycle faster
+            char_img = current_animation_frames[frame_index]
             self.screen.blit(char_img, (char_rect.x + 10, char_rect.y + 10))
 
             # Name
@@ -175,6 +203,7 @@ class InventoryScreen:
                 # Character selection
                 char_y = 180
                 for char_id in self.character_data:
+                    # Only allow selection of unlocked characters
                     if char_id in self.unlocked_characters:
                         char_rect = pygame.Rect(100, char_y, 300, 100)
                         if char_rect.collidepoint(mouse_pos):

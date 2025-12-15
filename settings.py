@@ -39,49 +39,76 @@ CHARACTER_DATA = {
 		'death': "assets/Character/3 Cyborg/Cyborg_death.png",
 		'buff': 'damage_boost',  # Example: double damage for 5s after kill
 		'buff_desc': 'Damage boost after each kill',
-        'hand': "assets/Character/Hands/3 Cyborg/1.png",
         'emotes': [
             "assets/Character/Emotes/Cyborg/Angry.png",
             "assets/Character/Emotes/Cyborg/Happy.png",
             "assets/Character/Emotes/Cyborg/Talk.png",
             "assets/Character/Emotes/Cyborg/Use.png",
-        ]
+        ],
+        'hand_animations': {
+            'idle': "assets/Character/Hands/3 Cyborg/1.png",
+            'run': "assets/Character/Hands/3 Cyborg/6.png",
+            'jump': ["assets/Character/Hands/3 Cyborg/4.png", "assets/Character/Hands/3 Cyborg/5.png"],
+            'double_jump': ["assets/Character/Hands/3 Cyborg/4.png", "assets/Character/Hands/3 Cyborg/5.png"], 
+            'emote_angry': "assets/Character/Emotes/Cyborg/Angry.png",
+            'emote_happy': "assets/Character/Emotes/Cyborg/Happy.png",
+            'emote_talk': "assets/Character/Emotes/Cyborg/Talk.png",
+            'emote_use': "assets/Character/Emotes/Cyborg/Use.png",
+        }
 	},
 	'biker': {
 		'name': 'Biker',
 		'default': False,
 		'idle': "assets/Character/1 Biker/Idle1.png",
 		'run': "assets/Character/1 Biker/Run1.png",
-		'jump': "assets/Character/1 Biker/Jump1.png",
-		'double_jump': "assets/Character/1 Biker/Jump2.png",
+		'jump': ["assets/Character/Hands/1 Biker/4.png", "assets/Character/Hands/1 Biker/5.png"],
+		'double_jump': ["assets/Character/Hands/1 Biker/4.png", "assets/Character/Hands/1 Biker/5.png"],
 		'death': "assets/Character/1 Biker/Death.png",
 		'buff': 'speed_boost',  # Example: faster run speed
 		'buff_desc': 'Increased movement speed',
-        'hand': "assets/Character/Hands/1 Biker/1.png",
         'emotes': [
             "assets/Character/Emotes/Biker/Angry.png",
             "assets/Character/Emotes/Biker/Happy.png",
             "assets/Character/Emotes/Biker/Talk.png",
             "assets/Character/Emotes/Biker/Use.png",
-        ]
+        ],
+        'hand_animations': {
+            'idle': "assets/Character/Hands/1 Biker/1.png",
+            'run': "assets/Character/Hands/1 Biker/6.png",
+            'jump': ["assets/Character/Hands/1 Biker/4.png", "assets/Character/Hands/1 Biker/5.png"],
+            'double_jump': ["assets/Character/Hands/1 Biker/4.png", "assets/Character/Hands/1 Biker/5.png"],
+            'emote_angry': "assets/Character/Emotes/Biker/Angry.png",
+            'emote_happy': "assets/Character/Emotes/Biker/Happy.png",
+            'emote_talk': "assets/Character/Emotes/Biker/Talk.png",
+            'emote_use': "assets/Character/Emotes/Biker/Use.png",
+        }
 	},
 	'punk': {
 		'name': 'Punk',
 		'default': False,
 		'idle': "assets/Character/2 Punk/Idle1.png",
 		'run': "assets/Character/2 Punk/Run1.png",
-		'jump': "assets/Character/2 Punk/Jump1.png",
-		'double_jump': "assets/Character/2 Punk/Jump2.png",
+		'jump': ["assets/Character/Hands/2 Punk/4.png", "assets/Character/Hands/2 Punk/5.png"],
+		'double_jump': ["assets/Character/Hands/2 Punk/4.png", "assets/Character/Hands/2 Punk/5.png"],
 		'death': "assets/Character/2 Punk/Death.png",
 		'buff': 'jump_boost',  # Example: higher jump
 		'buff_desc': 'Higher jump height',
-        'hand': "assets/Character/Hands/2 Punk/1.png",
         'emotes': [
             "assets/Character/Emotes/Punk/Angry.png",
             "assets/Character/Emotes/Punk/Happy.png",
             "assets/Character/Emotes/Punk/Talk.png",
             "assets/Character/Emotes/Punk/Use.png",
-        ]
+        ],
+        'hand_animations': {
+            'idle': "assets/Character/Hands/2 Punk/1.png",
+            'run': "assets/Character/Hands/2 Punk/6.png",
+            'jump': ["assets/Character/Hands/2 Punk/4.png", "assets/Character/Hands/2 Punk/5.png"],
+            'double_jump': ["assets/Character/Hands/2 Punk/4.png", "assets/Character/Hands/2 Punk/5.png"],
+            'emote_angry': "assets/Character/Emotes/Punk/Angry.png",
+            'emote_happy': "assets/Character/Emotes/Punk/Happy.png",
+            'emote_talk': "assets/Character/Emotes/Punk/Talk.png",
+            'emote_use': "assets/Character/Emotes/Punk/Use.png",
+        }
 	},
 }
 
@@ -109,6 +136,20 @@ VICTORY_SOUND = None
 THEME_MUSIC = "assets/audio/theme.mp3"
 LEVEL_MUSIC = "assets/audio/stage.mp3"
 BOSS_THEME = "assets/audio/boss.mp3"
+
+# Game Constants
+BOSS_COLLISION_DAMAGE = 10
+PLAYER_INVINCIBILITY_TIME = 1000 # milliseconds
+
+# Boss Assets
+BOSS_IDLE_SPRITE = "assets/orangjahat/Idle.png"
+BOSS_WALK_SPRITE = "assets/orangjahat/Walk.png"
+BOSS_DEATH_SPRITE = "assets/orangjahat/Death.png"
+BOSS_ATTACK1_SPRITE = "assets/orangjahat/Attack1.png"
+BOSS_ATTACK2_SPRITE = "assets/orangjahat/Attack2.png"
+BOSS_ATTACK3_SPRITE = "assets/orangjahat/Attack3.png"
+BOSS_ATTACK4_SPRITE = "assets/orangjahat/Attack4.png"
+BOSS_HURT_SPRITE = "assets/orangjahat/Hurt.png"
 
 # Sound Effects
 DEATH_SOUND = "assets/audio/mati.mp3"

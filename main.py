@@ -10,7 +10,7 @@ from level_data import ALL_LEVELS
 from shop_data import SHOP_ITEMS
 from shop import ShopScreen
 from gun_data import GUN_DATA
-from inventory import InventoryScreen
+from inventory import InventoryScreen, TIER_COLORS # Import TIER_COLORS
 
 SAVE_FILE = 'save.json'
 
@@ -38,11 +38,12 @@ class Game:
         self.u_pressed = False
         self.gacha_result = None
         self.gacha_animation_timer = 0
+        self.gacha_gun_display_images = {} # For displaying gun in gacha animation
 
         self.unlocked_levels = 1
         self.total_coins = 0
         self.upgrades = {item_id: 0 for item_id in SHOP_ITEMS}
-        self.current_level = 0
+        self.current_level = 1 # Change from 0 to 1
         self.unlocked_characters = ['cyborg'] # Default unlocked character
         self.selected_character = 'cyborg' # Default selected character
         self.unlocked_guns = ['pistol_1'] # Default unlocked gun
@@ -92,11 +93,26 @@ class Game:
                 for item_id in SHOP_ITEMS:
                     if item_id in loaded_upgrades:
                         self.upgrades[item_id] = loaded_upgrades[item_id]
+                
+                # Load unlocked characters and guns
+                self.unlocked_characters = data.get('unlocked_characters', ['cyborg'])
+                self.selected_character = data.get('selected_character', 'cyborg')
+                self.unlocked_guns = data.get('unlocked_guns', ['pistol_1'])
+                self.equipped_gun_id = data.get('equipped_gun_id', 'pistol_1')
+
         except (FileNotFoundError, json.JSONDecodeError):
             print("Save file not found, starting new game.")
+            self.unlocked_levels = 1
+            self.total_coins = 0
             self.upgrades = {item_id: 0 for item_id in SHOP_ITEMS}
+            self.current_level = 1
+            self.unlocked_characters = ['cyborg']
+            self.selected_character = 'cyborg'
+            self.unlocked_guns = ['pistol_1']
+            self.equipped_gun_id = 'pistol_1'
             self.volume = 1.0
             self.fullscreen = False
+
 
     def save_game_data(self):
         data = {
@@ -106,7 +122,9 @@ class Game:
             'volume': self.volume,
             'fullscreen': self.fullscreen,
             'unlocked_characters': self.unlocked_characters,
-            'selected_character': self.selected_character
+            'selected_character': self.selected_character,
+            'unlocked_guns': self.unlocked_guns,
+            'equipped_gun_id': self.equipped_gun_id
         }
         with open(SAVE_FILE, 'w') as f:
             json.dump(data, f)
@@ -162,6 +180,17 @@ class Game:
         # Pause menu buttons
         self.resume_button = Button(SCREEN_WIDTH/2 - 100, SCREEN_HEIGHT/2 - 50, 200, 50, "Resume", BLUE, PURPLE)
         self.main_menu_button = Button(SCREEN_WIDTH/2 - 100, SCREEN_HEIGHT/2 + 20, 200, 50, "Main Menu", RED, PURPLE)
+        
+        # Load gacha gun display images
+        for gun_id, gun_info in GUN_DATA.items():
+            try:
+                img = pygame.image.load(gun_info['image_path']).convert_alpha()
+                self.gacha_gun_display_images[gun_id] = pygame.transform.scale(img, (100, 100)) # Larger scale for display
+            except pygame.error:
+                print(f"Warning: Could not load gacha display image for {gun_id}: {gun_info['image_path']}")
+                self.gacha_gun_display_images[gun_id] = pygame.Surface((100, 100), pygame.SRCALPHA)
+                self.gacha_gun_display_images[gun_id].fill(GRAY)
+
 
     def init_level(self, level_number):
         self.current_level = level_number
@@ -412,20 +441,36 @@ class Game:
         if self.paused:
             return
 
-        is_gameplay_state = self.game_state in ['platformer', 'boss_fight']
-        
-        if self.player and self.player.health <= 0 and is_gameplay_state:
-            pygame.mixer.music.stop()
-            if self.sfx.get('walk'): self.sfx['walk'].stop()
-            self.walking_sound_playing = False
-            if self.death_sound: self.death_sound.play()
-            self.game_state = 'game_over'
+        # Player death check moved inside gameplay state condition
+        if self.game_state in ['platformer', 'boss_fight']:
+            if self.player and self.player.health <= 0:
+                pygame.mixer.music.stop()
+                if self.sfx.get('walk'): self.sfx['walk'].stop()
+                self.walking_sound_playing = False
+                if self.death_sound: self.death_sound.play()
+                self.game_state = 'game_over'
 
-        if self.game_state in ['victory', 'game_over', 'home_screen', 'level_selection', 'shop_screen', 'settings']: 
+            # Check for player-boss collision damage
+            if self.boss and self.player:
+                if pygame.sprite.spritecollide(self.player, self.boss_group, False):
+                    self.player.take_damage(BOSS_COLLISION_DAMAGE)
+
+
+        # This return statement needs to be conditional on the current game state
+        # It was originally intended to stop updates in menu states, but it was too broad.
+        if self.game_state not in ['platformer', 'boss_fight', 'gacha_animation']: # Only update player-related stuff in gameplay states
             if self.walking_sound_playing:
                 self.sfx['walk'].stop()
                 self.walking_sound_playing = False
             return
+
+        # Only proceed with player updates if in a gameplay state AND player exists
+        if not self.player and self.game_state in ['platformer', 'boss_fight']:
+            # This case should ideally not happen if init_level is called correctly
+            print("Warning: Player is None in gameplay state, attempting to re-initialize.")
+            self.player = Player(0, 0, self, upgrades=self.upgrades, character_id=self.selected_character, equipped_gun_id=self.equipped_gun_id)
+            self.all_sprites.add(self.player)
+
 
         if self.game_state == 'platformer':
             self.moving_platforms.update()
@@ -437,13 +482,11 @@ class Game:
             if self.boss:
                 self.boss.update()
             self.boss_projectiles.update()
-        elif self.game_state == 'gacha_animation':
+        elif self.game_state == 'gacha_animation': # Gacha animation handles its own state transition
             if pygame.time.get_ticks() - self.gacha_animation_timer > 3000: # 3 seconds
                 self.game_state = 'shop_screen'
                 self.gacha_result = None
-
-        if not self.player:
-            return
+            return # Don't run player update logic during gacha animation
 
         actions = self.controller.get_actions()
         if actions.get('jump'): 
@@ -625,12 +668,12 @@ class Game:
                     self.screen.blit(lock_overlay, card_rect.topleft)
                     self.draw_text("Locked", 30, card_rect.centerx, card_rect.centery, RED)
 
-            self.back_button.draw(self.screen, pygame.mouse.get_pos())
-            self.shop_button.draw(self.screen, pygame.mouse.get_pos())
-            self.inventory_button.draw(self.screen, pygame.mouse.get_pos())
+            self.back_button.draw(self.screen, mouse_pos)
+            self.shop_button.draw(self.screen, mouse_pos)
+            self.inventory_button.draw(self.screen, mouse_pos)
         elif self.game_state == 'shop_screen':
             self.shop_screen.draw()
-            self.back_button.draw(self.screen, pygame.mouse.get_pos())
+            self.back_button.draw(self.screen, mouse_pos)
         elif self.game_state == 'inventory':
             self.inventory_screen.draw()
         elif self.game_state == 'gacha_animation':
@@ -648,14 +691,32 @@ class Game:
                 elif self.gacha_result['tier'] == 'Legendary':
                     tier_color = GOLD
 
-                self.draw_text(gun_data['name'], 50, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 100, tier_color)
-                self.draw_text(f"({self.gacha_result['tier']})", 30, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 40, tier_color)
+                # Gun Image with scaling animation
+                animation_time = pygame.time.get_ticks() - self.gacha_animation_timer
+                scale_factor = min(1.0, animation_time / 1500) # Grow over 1.5 seconds
+                current_gun_image = self.gacha_gun_display_images[gun_id]
+                
+                scaled_width = int(current_gun_image.get_width() * scale_factor)
+                scaled_height = int(current_gun_image.get_height() * scale_factor)
+                
+                if scaled_width > 0 and scaled_height > 0:
+                    display_gun_image = pygame.transform.scale(current_gun_image, (scaled_width, scaled_height))
+                    gun_rect = display_gun_image.get_rect(center=(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 150))
+                    self.screen.blit(display_gun_image, gun_rect)
+
+                    # Draw tier border around the gun
+                    border_size = 5
+                    pygame.draw.rect(self.screen, tier_color, gun_rect.inflate(border_size * 2, border_size * 2), border_size, border_radius=10)
+
+
+                self.draw_text(gun_data['name'], 50, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 50, tier_color)
+                self.draw_text(f"({self.gacha_result['tier']})", 30, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 100, tier_color)
 
                 if self.gacha_result['is_duplicate']:
-                    self.draw_text("Duplicate!", 40, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 50, RED)
-                    self.draw_text(f"Refunded {500 // 2} coins", 20, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 100, YELLOW)
+                    self.draw_text("Duplicate!", 40, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 180, RED)
+                    self.draw_text(f"Refunded {500 // 2} coins", 20, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 220, YELLOW)
                 else:
-                    self.draw_text("New Gun Unlocked!", 40, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 50, GREEN)
+                    self.draw_text("New Gun Unlocked!", 40, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 180, GREEN)
         elif self.game_state in ['platformer', 'boss_fight', 'victory', 'game_over']:
             if self.game_state == 'platformer':
                 for sprite in self.all_sprites: self.screen.blit(sprite.image, (sprite.rect.x - self.camera_x, sprite.rect.y))
@@ -682,7 +743,7 @@ class Game:
                 overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA); overlay.fill((0, 0, 0, 128)); self.screen.blit(overlay, (0, 0))
                 if self.game_state == 'victory':
                     self.draw_text("VICTORY!", 60, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 - 50, GOLD)
-                    if self.current_level == self.unlocked_levels - 1 and self.unlocked_levels <= len(ALL_LEVELS): self.draw_text(f"Level {self.unlocked_levels} Unlocked!", 30, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 60)
+                    if self.current_level == self.unlocked_levels and self.unlocked_levels < len(ALL_LEVELS): self.draw_text(f"Level {self.unlocked_levels} Unlocked!", 30, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 60)
                     self.draw_text("Press any key to continue", 20, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 100)
                 else:
                     self.draw_text("GAME OVER", 60, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 - 30, RED); self.draw_text("Press R to Restart Level", 20, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 40)
@@ -697,7 +758,7 @@ class Game:
 
         pygame.display.flip()
 
-    def draw_ui(self):
+    def draw_ui(self, player_alive=True): # Added player_alive argument
         # Health bar
         health_rect = pygame.Rect(20, 20, 200, 25)
         pygame.draw.rect(self.screen, RED, health_rect)
@@ -709,7 +770,7 @@ class Game:
         self.draw_text(f"Health: {self.player.health}", 18, 120, 32)
         
         # Coins
-        self.draw_text(f"Coins: {self.player.coins}", 20, SCREEN_WIDTH - 100, 30, GOLD)
+        self.draw_text(f"Coins: {self.total_coins}", 20, SCREEN_WIDTH - 100, 30, GOLD) # Changed to self.total_coins
         
         # Current Weapon
         current_weapon_name = self.player.unlocked_weapons[self.player.current_weapon_index].replace('_', ' ').title()
