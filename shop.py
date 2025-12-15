@@ -34,6 +34,7 @@ class ShopScreen:
         self.item_buttons = []
         self.scroll_y = 0
         self.setup_buttons()
+        self.buy_crate_button = Button(SCREEN_WIDTH / 2 - 150, SCREEN_HEIGHT - 100, 300, 60, "Buy Gun Crate (500)", GOLD, DARK_PURPLE)
 
     def setup_buttons(self):
         self.item_buttons = []
@@ -106,6 +107,8 @@ class ShopScreen:
                     buy_button.hover_color = ORANGE if can_afford else GRAY
                     
                     buy_button.draw(self.screen, mouse_pos)
+        
+        self.buy_crate_button.draw(self.screen, mouse_pos)
 
         # Draw scrollbar
         if content_height > SCREEN_HEIGHT - 200:
@@ -156,6 +159,10 @@ class ShopScreen:
                 price = item_data['prices'][current_level]
                 if self.total_coins >= price and buy_button.is_clicked(event, mouse_pos):
                     return item_id
+        
+        if self.buy_crate_button.is_clicked(event, mouse_pos):
+            return 'buy_crate'
+
         return None
 
     def draw_text(self, text, size, x, y, color=WHITE, align="center"):

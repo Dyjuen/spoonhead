@@ -29,64 +29,141 @@ class SpriteSheet:
 
 class Player(pygame.sprite.Sprite):
     """Player character with a reliable counter-based double jump."""
-    def __init__(self, x, y, upgrades=None):
+
+    def __init__(self, x, y, game, upgrades=None, character_id=None, equipped_gun_id=None):
         super().__init__()
-        
+        from settings import CHARACTER_DATA
+        from gun_data import GUN_DATA
+        self.game = game
         self.upgrades = upgrades if upgrades else {}
+        self.character_id = character_id or 'cyborg'
+        self.character_data = CHARACTER_DATA[self.character_id]
+        self.gun_data = GUN_DATA
+        self.buff = self.character_data['buff']
+        self.buff_desc = self.character_data['buff_desc']
+        # Buff state
+        self.buff_active = False
+        self.buff_timer = 0
+
+        # Layered rendering
+        self.body_animations = {}
+        self.gun_animations = {}
+        self.hand_animations = {}
+        self.emote_animations = {}
+        self.gun_image = None
+        self.hand_image = None
+        
         self.load_animations()
+        self.equipped_gun_id = equipped_gun_id or 'pistol_1'
+        self.equip_gun(self.equipped_gun_id)
+
         self.action = 'idle'
         self.frame_index = 0
         self.last_frame_update = pygame.time.get_ticks()
-        self.image = self.animations[self.action][self.frame_index]
+        self.idle_timer = 0
+        self.is_emoting = False
+        self.emote_cooldown = random.randint(5000, 10000)
+
+        # Composite image
+        self.image = pygame.Surface((60, 60), pygame.SRCALPHA)
         self.rect = self.image.get_rect(center=(x, y))
+
         self.hitbox = pygame.Rect(0, 0, 20, 45)
-        self.hitbox_offset_x = 10  # Offset sedikit mundur dari center
+        self.hitbox_offset_x = 10
         self.hitbox.center = (self.rect.centerx - self.hitbox_offset_x, self.rect.centery)
-        
         self.max_health = 100
+        self.health = self.max_health # FIX: Initialize health
         self.coins = 0
-        
         self.vx = 0
         self.vy = 0
+        # Buffs
         self.speed = 6
         self.jump_power = -16
-        self.gravity = 0.8
+        if self.buff == 'speed_boost':
+            self.speed = 7
+        if self.buff == 'jump_boost':
+            self.jump_power = -20
+        self.update_buff() # Initialize physics attributes
+
+    def equip_gun(self, gun_id):
+        self.equipped_gun_id = gun_id
+        gun_info = self.gun_data[gun_id]
+        gun_path = gun_info['image_path']
+        try:
+            # For non-animated guns, just load a single image
+            self.gun_image = pygame.image.load(gun_path).convert_alpha()
+            self.gun_image = pygame.transform.scale(self.gun_image, (15, 15)) # Example scale
+        except pygame.error:
+            print(f"Warning: Could not load gun image: {gun_path}")
+            self.gun_image = pygame.Surface((15, 15), pygame.SRCALPHA)
+            self.gun_image.fill(GRAY)
         
-        # Counter-based double jump
+        # Load bullet image for the gun
+        bullet_path = gun_info['bullet_path']
+        try:
+            bullet_img = pygame.image.load(bullet_path).convert_alpha()
+            scaled_bullet = pygame.transform.scale(bullet_img, (20, 10))
+            Projectile.animation_frames_right = [scaled_bullet]
+            Projectile.animation_frames_left = [pygame.transform.flip(scaled_bullet, True, False)]
+        except pygame.error:
+            print(f"Warning: Could not load bullet image for {gun_id}: {bullet_path}")
+            surf = pygame.Surface((20, 10), pygame.SRCALPHA); surf.fill(YELLOW)
+            Projectile.animation_frames_right = [surf]
+            Projectile.animation_frames_left = [surf]
+
+    def apply_buff(self):
+        # Cyborg: damage boost after kill (5s)
+        if self.buff == 'damage_boost':
+            self.damage_boost_active = True
+            self.damage_boost_timer = pygame.time.get_ticks()
+            self.buff_active = True
+            self.buff_timer = pygame.time.get_ticks()
+        # Biker: speed boost (5s)
+        elif self.buff == 'speed_boost':
+            self.speed = 10
+            self.buff_active = True
+            self.buff_timer = pygame.time.get_ticks()
+        # Punk: jump boost (5s)
+        elif self.buff == 'jump_boost':
+            self.jump_power = -28
+            self.buff_active = True
+            self.buff_timer = pygame.time.get_ticks()
+
+    def update_buff(self):
+        # Buff duration: 5 seconds
+        if self.buff_active and pygame.time.get_ticks() - self.buff_timer > 5000:
+            if self.buff == 'damage_boost':
+                self.damage_boost_active = False
+            elif self.buff == 'speed_boost':
+                self.speed = 7
+            elif self.buff == 'jump_boost':
+                self.jump_power = -20
+            self.buff_active = False
+        self.gravity = 0.8
         self.on_ground = False
         self.jumps_made = 0
-        
         self.dashing = False
         self.dash_timer = 0
         self.dash_duration = 200
         self.dash_speed = 15
         self.dash_cooldown = 500
         self.last_dash = 0
-        
         self.can_shoot = True
         self.shoot_cooldown = 250
         self.last_shot = 0
         self.facing_right = True
         self.shot_damage = 10
-
-        # Weapon switching
         self.unlocked_weapons = ['default']
         self.current_weapon_index = 0
         self.double_jump_unlocked = False
         self.was_on_ground = False
-
-        # Power-ups
         self.damage_boost_active = False
         self.damage_boost_timer = 0
-        self.power_up_duration = 10000 # 10 seconds
-
-        # Ultimate ability
+        self.power_up_duration = 10000
         self.ultimate_meter = 0
-        self.ultimate_max_meter = 5 # 5 kills to charge ultimate
+        self.ultimate_max_meter = 5
         self.ultimate_ready = False
-        
         self.apply_upgrades()
-        self.health = self.max_health
 
     def apply_upgrades(self):
         self.max_health += 25 * self.upgrades.get('health_up', 0)
@@ -106,50 +183,125 @@ class Player(pygame.sprite.Sprite):
         print(f"Switched to: {self.unlocked_weapons[self.current_weapon_index]}") # For debugging
 
     def load_animations(self):
-        self.animations = {'idle': [], 'run': [], 'jump': [], 'double_jump': []}
         player_size = (60, 60)
-        for anim_type, sprite_path in [
-            ('idle', PLAYER_IDLE_SPRITE), ('run', PLAYER_RUN_SPRITE),
-            ('jump', PLAYER_JUMP_SPRITE), ('double_jump', PLAYER_DOUBLE_JUMP_SPRITE)
-        ]:
+        hand_size = (60, 60) # Example size, may need adjustment
+
+        # Load body animations
+        self.body_animations = {'idle': [], 'run': [], 'jump': [], 'double_jump': []}
+        for anim_type in self.body_animations.keys():
+            sprite_path = self.character_data[anim_type]
             try:
                 sheet = SpriteSheet(sprite_path)
                 frames = sheet.get_animation_frames(48, 48)
                 scaled_frames = [pygame.transform.scale(frame, player_size) for frame in frames]
-                self.animations[anim_type] = scaled_frames
+                self.body_animations[anim_type] = scaled_frames
             except (pygame.error, FileNotFoundError):
-                print(f"Warning: Could not load player animation: {sprite_path}")
+                print(f"Warning: Could not load player body animation: {sprite_path}")
                 placeholder_frame = pygame.Surface(player_size, pygame.SRCALPHA); placeholder_frame.fill(BLUE)
-                self.animations[anim_type] = [placeholder_frame] * 4
+                self.body_animations[anim_type] = [placeholder_frame] * 4
+
+        # Load hand image
+        hand_path = self.character_data['hand']
+        try:
+            hand_image = pygame.image.load(hand_path).convert_alpha()
+            scaled_hand = pygame.transform.scale(hand_image, hand_size)
+            for anim_type, body_frames in self.body_animations.items():
+                self.hand_animations[anim_type] = [scaled_hand] * len(body_frames)
+        except (pygame.error, FileNotFoundError, KeyError):
+            print(f"Warning: Could not load player hand animation: {hand_path}")
+            placeholder_frame = pygame.Surface(hand_size, pygame.SRCALPHA)
+            for anim_type, body_frames in self.body_animations.items():
+                self.hand_animations[anim_type] = [placeholder_frame] * len(body_frames)
+                
+        # Load emote animations
+        self.emote_animations = {}
+        if 'emotes' in self.character_data:
+            for i, emote_path in enumerate(self.character_data['emotes']):
+                try:
+                    img = pygame.image.load(emote_path).convert_alpha()
+                    scaled_img = pygame.transform.scale(img, player_size)
+                    self.emote_animations[f'emote_{i}'] = [scaled_img] # Treat as single-frame animation
+                except (pygame.error, FileNotFoundError):
+                    print(f"Warning: Could not load emote animation: {emote_path}")
 
     def animate(self):
         now = pygame.time.get_ticks()
-        if self.action == 'double_jump' and self.frame_index >= len(self.animations['double_jump']) - 1:
+        
+        # Determine current body animation
+        if self.action.startswith('emote') and self.is_emoting:
+             # Simple timer for single-frame emotes
+            if now - self.last_frame_update > 1000: # Show emote for 1 second
+                self.is_emoting = False
+                self.set_action('idle')
+        elif self.action == 'double_jump' and self.frame_index >= len(self.body_animations['double_jump']) - 1:
             self.set_action('jump')
+        
+        # Get animation list, default to idle if action not found
+        current_animation = self.body_animations.get(self.action)
+        if not current_animation:
+            current_animation = self.emote_animations.get(self.action, self.body_animations['idle'])
+
         if now - self.last_frame_update > 100:
             self.last_frame_update = now
-            self.frame_index = (self.frame_index + 1) % len(self.animations.get(self.action, [self.image]))
-            new_image = self.animations[self.action][self.frame_index]
-            if not self.facing_right:
-                new_image = pygame.transform.flip(new_image, True, False)
-            center = self.rect.center
-            self.image = new_image
-            self.rect = self.image.get_rect(center=center)
+            self.frame_index = (self.frame_index + 1) % len(current_animation)
+        
+        # Get current frames for body, gun, hand
+        body_frame = current_animation[self.frame_index]
+        hand_frame = self.hand_animations.get(self.action, self.hand_animations['idle'])[self.frame_index]
+        gun_image = self.gun_image
+
+        if not self.facing_right:
+            body_frame = pygame.transform.flip(body_frame, True, False)
+            hand_frame = pygame.transform.flip(hand_frame, True, False)
+            gun_image = pygame.transform.flip(gun_image, True, False)
+        
+        # Create a new composite image
+        self.image.fill((0, 0, 0, 0)) # Clear previous frame
+        
+        # These offsets are placeholders and will need to be fine-tuned for each frame/animation
+        gun_offset = (10, 25) 
+        hand_offset = (0, 0)
+        
+        # Blit in order: body -> gun -> hand
+        self.image.blit(body_frame, (0, 0))
+        self.image.blit(gun_image, gun_offset)
+        self.image.blit(hand_frame, hand_offset)
+
+        # Update rect
+        center = self.rect.center
+        self.rect = self.image.get_rect(center=center)
 
     def set_action(self, new_action):
         if self.action != new_action:
             self.action = new_action
             self.frame_index = 0
+            self.last_frame_update = pygame.time.get_ticks() # Reset timer on action change
 
     def update(self, move_input, platforms):
         sfx_events = []
-        if not self.on_ground:
-            if self.vy > 0 and self.action != 'double_jump': self.set_action('jump') # Falling
-        elif move_input is not None and (move_input < 0.4 or move_input > 0.6): self.set_action('run')
-        else: self.set_action('idle')
+        now = pygame.time.get_ticks()
+
+        # Emote logic
+        if self.action == 'idle' and not self.is_emoting:
+            self.idle_timer += self.game.clock.get_time() # Use game clock for framerate independence
+            if self.idle_timer > self.emote_cooldown and self.emote_animations:
+                self.is_emoting = True
+                self.set_action(random.choice(list(self.emote_animations.keys())))
+                self.idle_timer = 0
+                self.emote_cooldown = random.randint(5000, 10000) # Reset cooldown
+        elif self.action != 'idle':
+            self.idle_timer = 0
+            if not self.action.startswith('emote'):
+                self.is_emoting = False
+
+        if not self.is_emoting:
+            if not self.on_ground:
+                if self.vy > 0 and self.action != 'double_jump': self.set_action('jump') # Falling
+            elif move_input is not None and (move_input < 0.4 or move_input > 0.6): self.set_action('run')
+            else: self.set_action('idle')
 
         self.vx = 0
-        if move_input is not None:
+        if move_input is not None and not self.is_emoting:
             if self.dashing:
                 if pygame.time.get_ticks() - self.dash_timer > self.dash_duration: self.dashing = False
                 self.vx = self.dash_speed * (1 if self.facing_right else -1)
@@ -216,7 +368,7 @@ class Player(pygame.sprite.Sprite):
 
     def jump(self):
         max_jumps = 2 if self.double_jump_unlocked else 1
-        if self.jumps_made < max_jumps:
+        if self.jumps_made < max_jumps and not self.is_emoting:
             self.vy = self.jump_power
             self.on_ground = False
             self.set_action('double_jump' if self.jumps_made == 1 else 'jump')
@@ -228,12 +380,12 @@ class Player(pygame.sprite.Sprite):
 
     def dash(self):
         current_time = pygame.time.get_ticks()
-        if not self.dashing and current_time - self.last_dash > self.dash_cooldown:
+        if not self.dashing and current_time - self.last_dash > self.dash_cooldown and not self.is_emoting:
             self.dashing = True; self.dash_timer = current_time; self.last_dash = current_time
 
     def shoot(self, shoot_direction='horizontal'):
         current_time = pygame.time.get_ticks()
-        if current_time - self.last_shot > self.shoot_cooldown:
+        if current_time - self.last_shot > self.shoot_cooldown and not self.is_emoting:
             self.last_shot = current_time
             projectiles = pygame.sprite.Group()
             sfx_name = 'default_shot' # Default sound
@@ -311,6 +463,9 @@ class Player(pygame.sprite.Sprite):
             if self.ultimate_meter >= self.ultimate_max_meter:
                 self.ultimate_ready = True
                 print("Ultimate ready!") # for debugging
+        # Trigger buff on kill for Cyborg only
+        if self.buff == 'damage_boost':
+            self.apply_buff()
 
     def activate_ultimate(self):
         if self.ultimate_ready:
@@ -421,12 +576,22 @@ class EnemyProjectile(pygame.sprite.Sprite):
         self.rect.move_ip(self.vx, self.vy); self.lifetime -= 1
         if self.lifetime <= 0 or not self.rect.colliderect(pygame.Rect(-100,-100,10000,SCREEN_HEIGHT+200)): self.kill()
 
+class BossProjectile(pygame.sprite.Sprite):
+    def __init__(self, x, y, vx, vy):
+        super().__init__(); self.image = pygame.Surface((16, 16), pygame.SRCALPHA)
+        pygame.draw.circle(self.image, PINK, (8, 8), 8); pygame.draw.circle(self.image, PURPLE, (8, 8), 5)
+        self.rect = self.image.get_rect(center=(x, y)); self.vx, self.vy = vx, vy
+
+    def update(self):
+        self.rect.move_ip(self.vx, self.vy)
+        if not self.rect.colliderect(pygame.Rect(-50,-50,SCREEN_WIDTH+100,SCREEN_HEIGHT+100)): self.kill()
+
 class Projectile(pygame.sprite.Sprite):
     animation_frames_right, animation_frames_left = [], []
     @staticmethod
     def load_images():
         if Projectile.animation_frames_right: return
-        bullet_size, sprite_paths = (20, 10), [os.path.join("assets", "Bullets", f"7_{i}.png") for i in "12"]
+        bullet_size, sprite_paths = (20, 10), [os.path.join("assets", "Guns", "Pistols", "5 Bullets", f"7_{i}.png") for i in "12"]
         try:
             for path in sprite_paths:
                 img = pygame.image.load(path).convert_alpha()
@@ -490,81 +655,113 @@ class BossGate(pygame.sprite.Sprite):
         self.image.blit(font.render("BOSS", True, WHITE), (15, 45)); self.rect = self.image.get_rect(center=(x, y))
 
 class PowerUpBox(pygame.sprite.Sprite):
-    def __init__(self, x, y, game):
+    def __init__(self, x, y, power_up_type='damage_boost', health=50):
         super().__init__()
-        self.game = game
-        self.image = pygame.Surface((40, 40))
-        self.image.fill(BROWN)
-        pygame.draw.rect(self.image, DARK_BROWN, (0, 0, 40, 40), 5)
-        pygame.draw.line(self.image, DARK_BROWN, (10, 20), (30, 20), 5)
-        self.rect = self.image.get_rect(center=(x, y))
-        self.health = 20
-
+        self.image = pygame.Surface((40, 40)); self.image.fill(GRAY)
+        pygame.draw.rect(self.image, WHITE, self.image.get_rect(), 3)
+        self.rect = self.image.get_rect(topleft=(x, y))
+        self.power_up_type = power_up_type
+        self.health = health
+        
     def take_damage(self, amount):
         self.health -= amount
         if self.health <= 0:
             self.kill()
-            power_up_type = random.choice(['damage_boost', 'health'])
-            power_up = PowerUp(self.rect.centerx, self.rect.centery, power_up_type)
-            self.game.all_sprites.add(power_up)
-            self.game.power_ups.add(power_up)
+            # Placeholder for spawning a PowerUp, will be handled in main.py
+            return True
+        return False
+
+    def update(self):
+        # A static box, so update does nothing for now
+        pass
 
 class PowerUp(pygame.sprite.Sprite):
     def __init__(self, x, y, power_up_type):
         super().__init__()
         self.power_up_type = power_up_type
         self.image = pygame.Surface((25, 25), pygame.SRCALPHA)
+        self.rect = self.image.get_rect(center=(x, y))
+
+        # Assign color/image based on type
         if self.power_up_type == 'damage_boost':
             self.image.fill(ORANGE)
-            pygame.draw.circle(self.image, RED, (12, 12), 10)
         elif self.power_up_type == 'health':
             self.image.fill(GREEN)
-            pygame.draw.rect(self.image, WHITE, (10, 5, 5, 15))
-            pygame.draw.rect(self.image, WHITE, (5, 10, 15, 5))
-        self.rect = self.image.get_rect(center=(x, y))
-        self.bob_offset = random.uniform(0, 2 * math.pi)
-        self.bob_range = 4
-        self.original_y = y
+        else: # Default or unknown power-up
+            self.image.fill(WHITE)
+        pygame.draw.rect(self.image, BLACK, self.image.get_rect(), 2) # Border
 
     def update(self):
-        self.rect.y = self.original_y + int(math.sin(self.bob_offset) * self.bob_range)
-        self.bob_offset += 0.1
+        # Optional: Add a bobbing or floating effect
+        pass
 
 class Boss(pygame.sprite.Sprite):
-    def __init__(self, x, y, game, health=500, speed=3, shoot_interval=60, phases=3, boss_type=1):
-        super().__init__(); self.game = game
-        self.max_health, self.health, self.phase, self.max_phases = health, health, 1, phases
+    def __init__(self, x, y, game, boss_type, health, speed, shoot_interval, phases):
+        super().__init__()
+        self.game = game
         self.boss_type = boss_type
-        try:
-            self.original_image = pygame.transform.scale(pygame.image.load(BOSS_IMAGE).convert_alpha(), (120, 120))
-        except (pygame.error, TypeError):
-            self.original_image = pygame.Surface((120, 120), pygame.SRCALPHA); self.original_image.fill(PURPLE)
-            pygame.draw.circle(self.original_image, DARK_PURPLE, (60, 60), 50)
-        self.image, self.flash_image = self.original_image.copy(), self.original_image.copy()
-        self.flash_image.fill((255, 255, 255), special_flags=pygame.BLEND_RGB_ADD)
-        self.rect = self.image.get_rect(center=(x, y)); self.vx, self.vy = speed, speed * 0.66
-        self.shoot_timer, self.base_shoot_interval = 0, shoot_interval; self.shoot_interval = shoot_interval
-        self.pattern_counter, self.is_flashing, self.flash_timer, self.flash_duration = 0, False, 0, 150
+        self.max_health = health
+        self.health = health
+        self.speed = speed
+        self.shoot_interval = shoot_interval / 1000.0  # Convert ms to seconds for time.time()
+        self.phases = phases
+        self.current_phase = 1
+        self.last_shot_time = time.time()
+        self.pattern_counter = 0  # Used for cycling through patterns
+
+        # Flashing effect for damage
+        self.is_flashing = False
+        self.flash_timer = 0
+        self.flash_duration = 100 # milliseconds
+
+        self.load_image()
+        self.rect = self.image.get_rect(center=(x, y))
+        self.original_image = self.image.copy() # Store original for flashing
+
+        self.direction = 1 # For simple horizontal movement
+
+    def load_image(self):
+        # Placeholder image for the boss
+        # In a real game, this would load actual boss spritesheets/animations
+        boss_size = (100, 100)
+        self.image = pygame.Surface(boss_size, pygame.SRCALPHA)
+        self.image.fill(PURPLE)
+        pygame.draw.circle(self.image, DARK_PURPLE, (boss_size[0]//2, boss_size[1]//2), boss_size[0]//2 - 5)
+        # You can add different visuals based on boss_type here
+        if self.boss_type == 1:
+            self.image.fill(BLUE)
+        elif self.boss_type == 2:
+            self.image.fill(GREEN)
+        elif self.boss_type == 3:
+            self.image.fill(RED)
 
     def update(self):
-        if self.max_phases>1 and self.health<self.max_health*0.66 and self.phase==1: self.phase,self.shoot_interval=2,self.base_shoot_interval*0.75
-        elif self.max_phases>2 and self.health<self.max_health*0.33 and self.phase==2: self.phase,self.shoot_interval=3,self.base_shoot_interval*0.5
-        self.rect.x+=self.vx; self.rect.y+=self.vy
-        if self.rect.left<=0 or self.rect.right>=SCREEN_WIDTH: self.vx *= -1
-        if self.rect.top<=100 or self.rect.bottom>=400: self.vy *= -1
-        self.shoot_timer+=1
-        if self.shoot_timer>=self.shoot_interval: self.shoot(); self.shoot_timer=0
-        if self.is_flashing and pygame.time.get_ticks()-self.flash_timer>self.flash_duration: self.is_flashing=False; self.image=self.original_image
+        # Simple horizontal movement for now
+        self.rect.x += self.speed * self.direction
+        if self.rect.left < 0 or self.rect.right > SCREEN_WIDTH:
+            self.direction *= -1
 
-    def shoot(self):
-        if self.boss_type == 1:
-            self.shoot_pattern_boss1()
-        elif self.boss_type == 2:
-            self.shoot_pattern_boss2()
-        elif self.boss_type == 3:
-            self.shoot_pattern_boss3()
-        else: # Default behavior
-            self.shoot_pattern_1()
+        now = time.time()
+        if now - self.last_shot_time > self.shoot_interval:
+            self.last_shot_time = now
+            if self.boss_type == 1:
+                self.shoot_pattern_boss1()
+            elif self.boss_type == 2:
+                self.shoot_pattern_boss2()
+            elif self.boss_type == 3:
+                self.shoot_pattern_boss3()
+        
+        # Handle flashing
+        if self.is_flashing:
+            if pygame.time.get_ticks() - self.flash_timer > self.flash_duration:
+                self.is_flashing = False
+                self.image = self.original_image.copy() # Revert to original
+            else:
+                # Simple flash: make it brighter
+                flash_image = self.original_image.copy()
+                flash_image.fill((100, 100, 100, 0), special_flags=pygame.BLEND_ADD) # Brighten
+                self.image = flash_image
+
 
     def shoot_pattern_boss1(self):
         # Boss 1 only has one simple pattern.
@@ -572,16 +769,16 @@ class Boss(pygame.sprite.Sprite):
 
     def shoot_pattern_boss2(self):
         # Boss 2 uses pattern 2 in phase 1, and pattern 3 in phase 2.
-        if self.phase == 1:
+        if self.current_phase == 1:
             self.shoot_pattern_2()
         else:
             self.shoot_pattern_3()
 
     def shoot_pattern_boss3(self):
         # Boss 3 cycles through all patterns based on its phase.
-        if self.phase == 1:
+        if self.current_phase == 1:
             self.shoot_pattern_1()
-        elif self.phase == 2:
+        elif self.current_phase == 2:
             self.shoot_pattern_2()
         else:
             self.shoot_pattern_3()
@@ -603,20 +800,12 @@ class Boss(pygame.sprite.Sprite):
         self.pattern_counter+=1
 
     def take_damage(self, amount):
-        if self.is_flashing: return
+        if self.is_flashing: return # Prevent taking damage while flashing (invincibility frames)
         self.health -= amount
         if self.health <= 0:
             self.health = 0
             self.kill()
             return
-        self.is_flashing=True; self.flash_timer=pygame.time.get_ticks(); self.image=self.flash_image
-
-class BossProjectile(pygame.sprite.Sprite):
-    def __init__(self, x, y, vx, vy):
-        super().__init__(); self.image = pygame.Surface((16, 16), pygame.SRCALPHA)
-        pygame.draw.circle(self.image, PINK, (8, 8), 8); pygame.draw.circle(self.image, PURPLE, (8, 8), 5)
-        self.rect = self.image.get_rect(center=(x, y)); self.vx, self.vy = vx, vy
-
-    def update(self):
-        self.rect.move_ip(self.vx, self.vy)
-        if not self.rect.colliderect(pygame.Rect(-50,-50,SCREEN_WIDTH+100,SCREEN_HEIGHT+100)): self.kill()
+        self.is_flashing = True
+        self.flash_timer = pygame.time.get_ticks()
+        # No image change here, handled in update()

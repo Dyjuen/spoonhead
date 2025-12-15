@@ -1,6 +1,7 @@
 import pygame
 import os
 import json
+import random
 from settings import *
 from controller import XboxController
 from sprites import Player, Boss, Projectile, BossProjectile, Platform, MovingPlatform, Coin, Enemy, BossGate, PowerUpBox, PowerUp, EnemyProjectile
@@ -8,6 +9,8 @@ from ui import Button
 from level_data import ALL_LEVELS
 from shop_data import SHOP_ITEMS
 from shop import ShopScreen
+from gun_data import GUN_DATA
+from inventory import InventoryScreen
 
 SAVE_FILE = 'save.json'
 
@@ -33,25 +36,44 @@ class Game:
         self.paused = False
         self.walking_sound_playing = False
         self.u_pressed = False
+        self.gacha_result = None
+        self.gacha_animation_timer = 0
 
         self.unlocked_levels = 1
         self.total_coins = 0
         self.upgrades = {item_id: 0 for item_id in SHOP_ITEMS}
         self.current_level = 0
+        self.unlocked_characters = ['cyborg'] # Default unlocked character
+        self.selected_character = 'cyborg' # Default selected character
+        self.unlocked_guns = ['pistol_1'] # Default unlocked gun
+        self.equipped_gun_id = 'pistol_1' # Default equipped gun
         self.load_game_data()
 
         self.controller = XboxController()
         self.camera_x = 0
         self.player = None
+        self.all_sprites = pygame.sprite.Group()
+        self.platforms = pygame.sprite.Group()
+        self.moving_platforms = pygame.sprite.Group()
+        self.coins = pygame.sprite.Group()
+        self.enemies = pygame.sprite.Group()
+        self.projectiles = pygame.sprite.Group()
+        self.enemy_projectiles = pygame.sprite.Group()
+        self.boss_projectiles = pygame.sprite.Group()
+        self.boss_group = pygame.sprite.Group()
+        self.boss_gate_group = pygame.sprite.Group()
+        self.power_up_boxes = pygame.sprite.Group()
+        self.power_ups = pygame.sprite.Group()
+        self.boss = None
 
         # Level selection
         self.scroll_x = 0
         self.level_cards = []
         
-        self.load_assets()
-        self.setup_buttons()
         self.shop_screen = ShopScreen(self.screen, self.total_coins, self.upgrades, SHOP_ITEMS)
+        self.inventory_screen = InventoryScreen(self.screen, self.selected_character, self.unlocked_guns, GUN_DATA, CHARACTER_DATA, self.equipped_gun_id)
 
+        self.load_assets()
         self.apply_settings()
 
         # Start theme music
@@ -78,11 +100,13 @@ class Game:
 
     def save_game_data(self):
         data = {
-            'unlocked_levels': self.unlocked_levels, 
-            'total_coins': self.total_coins, 
+            'unlocked_levels': self.unlocked_levels,
+            'total_coins': self.total_coins,
             'upgrades': self.upgrades,
             'volume': self.volume,
-            'fullscreen': self.fullscreen
+            'fullscreen': self.fullscreen,
+            'unlocked_characters': self.unlocked_characters,
+            'selected_character': self.selected_character
         }
         with open(SAVE_FILE, 'w') as f:
             json.dump(data, f)
@@ -102,7 +126,6 @@ class Game:
         try:
             self.bg_image = pygame.transform.scale(pygame.image.load(os.path.join("assets", "bg.jpg")).convert(), (SCREEN_WIDTH, SCREEN_HEIGHT))
             self.boss_bg_image = pygame.transform.scale(pygame.image.load(os.path.join("assets", "bg2.jpg")).convert(), (SCREEN_WIDTH, SCREEN_HEIGHT))
-            
             self.sfx = {
                 'default_shot': pygame.mixer.Sound(DEFAULT_SHOT_SOUND),
                 'spread_shot': pygame.mixer.Sound(SPREAD_SHOT_SOUND),
@@ -115,15 +138,12 @@ class Game:
                 'victory': pygame.mixer.Sound(VICTORY_SOUND),
             }
             self.death_sound = self.sfx['death'] # Keep separate reference for existing logic
-
         except pygame.error as e:
             print(f"Warning: Could not load assets: {e}")
             self.bg_image = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT)); self.bg_image.fill(SKY_BLUE)
             self.boss_bg_image = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT)); self.boss_bg_image.fill(DARK_GRAY)
             self.sfx = {}
             self.death_sound = None
-
-    def setup_buttons(self):
         self.start_button = Button(SCREEN_WIDTH/2 - 100, SCREEN_HEIGHT/2 - 50, 200, 50, "Start Game", BLUE, PURPLE)
         self.quit_button = Button(SCREEN_WIDTH/2 - 100, SCREEN_HEIGHT/2 + 20, 200, 50, "Quit Game", RED, PURPLE)
         self.settings_button = Button(SCREEN_WIDTH/2 - 100, SCREEN_HEIGHT/2 + 90, 200, 50, "Settings", GRAY, PURPLE)
@@ -131,6 +151,7 @@ class Game:
         self.level_cards = []
 
         self.shop_button = Button(SCREEN_WIDTH - 170, 20, 150, 50, "Shop", GOLD, PURPLE)
+        self.inventory_button = Button(SCREEN_WIDTH - 170, 90, 150, 50, "Inventory", GOLD, PURPLE)
         self.back_button = Button(20, 20, 150, 50, "Back", RED, PURPLE)
 
         # Settings screen buttons
@@ -161,7 +182,7 @@ class Game:
         self.power_ups = pygame.sprite.Group()
         
         # Player
-        self.player = Player(100, 400, self.upgrades)
+        self.player = Player(100, 400, self, upgrades=self.upgrades, character_id=self.selected_character, equipped_gun_id=self.equipped_gun_id)
         
         # Level Objects
         for p_data in level_data["platforms"]:
@@ -175,7 +196,7 @@ class Game:
         for e_data in level_data["enemies"]:
             self.enemies.add(Enemy(player=self.player, **e_data))
         for b_data in level_data.get("power_up_boxes", []):
-            self.power_up_boxes.add(PowerUpBox(*b_data, game=self))
+            self.power_up_boxes.add(PowerUpBox(*b_data))
         
         self.boss_gate = BossGate(level_data["boss_gate_x"], 460)
         self.boss_gate_group.add(self.boss_gate)
@@ -230,6 +251,42 @@ class Game:
         text_rect = text_surface.get_rect(**{align: (x, y)})
         self.screen.blit(text_surface, text_rect)
 
+    def buy_gun_crate(self):
+        crate_cost = 500
+        if self.total_coins >= crate_cost:
+            self.total_coins -= crate_cost
+
+            rarity_weights = { 'Common': 0.6, 'Rare': 0.25, 'Epic': 0.1, 'Legendary': 0.05 }
+            guns_by_tier = {tier: [] for tier in rarity_weights}
+            for gun_id, gun_data in GUN_DATA.items():
+                guns_by_tier[gun_data['tier']].append(gun_id)
+
+            chosen_tier = random.choices(list(rarity_weights.keys()), weights=list(rarity_weights.values()), k=1)[0]
+            
+            if guns_by_tier[chosen_tier]:
+                unlocked_gun_id = random.choice(guns_by_tier[chosen_tier])
+                
+                is_duplicate = unlocked_gun_id in self.unlocked_guns
+                if is_duplicate:
+                    refund = crate_cost // 2
+                    self.total_coins += refund
+                else:
+                    self.unlocked_guns.append(unlocked_gun_id)
+
+                self.gacha_result = {
+                    'gun_id': unlocked_gun_id,
+                    'is_duplicate': is_duplicate,
+                    'tier': chosen_tier
+                }
+                self.game_state = 'gacha_animation'
+                self.gacha_animation_timer = pygame.time.get_ticks()
+                self.inventory_screen.update_data(self.selected_character, self.unlocked_guns, self.equipped_gun_id)
+                self.save_game_data()
+            else:
+                print("No guns in the chosen tier.")
+        else:
+            print("Not enough coins to buy a crate.")
+
     def handle_events(self):
         mouse_pos = pygame.mouse.get_pos()
         for event in pygame.event.get():
@@ -276,6 +333,7 @@ class Game:
                 if self.back_button.is_clicked(event, mouse_pos): 
                     self.game_state = 'home_screen'
                 if self.shop_button.is_clicked(event, mouse_pos): self.game_state = 'shop_screen'
+                if self.inventory_button.is_clicked(event, mouse_pos): self.game_state = 'inventory'
 
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1: # Left click
@@ -290,19 +348,33 @@ class Game:
                 # Clamp scroll
                 max_scroll_x = (len(ALL_LEVELS) - 1) * 260 # Rough estimate
                 self.scroll_x = max(0, min(self.scroll_x, max_scroll_x))
+            elif self.game_state == 'inventory':
+                result = self.inventory_screen.handle_event(event)
+                if result == 'back':
+                    self.game_state = 'level_selection'
+                elif isinstance(result, tuple):
+                    if result[0] == 'character_selected':
+                        self.change_character(result[1])
+                    elif result[0] == 'gun_selected':
+                        self.equipped_gun_id = result[1]
+                        if self.player:
+                            self.player.equip_gun(self.equipped_gun_id)
+                        self.inventory_screen.update_data(self.selected_character, self.unlocked_guns, self.equipped_gun_id)
             elif self.game_state == 'shop_screen':
                 if self.back_button.is_clicked(event, mouse_pos): self.game_state = 'level_selection'
                 
-                purchased_item_id = self.shop_screen.handle_event(event)
-                if purchased_item_id:
-                    item_data = SHOP_ITEMS[purchased_item_id]
-                    current_level = self.upgrades.get(purchased_item_id, 0)
+                result = self.shop_screen.handle_event(event)
+                if result == 'buy_crate':
+                    self.buy_gun_crate()
+                elif result: # Should be an item_id for an upgrade
+                    item_data = SHOP_ITEMS[result]
+                    current_level = self.upgrades.get(result, 0)
 
                     if current_level < item_data['max_level']:
                         price = item_data['prices'][current_level]
                         if self.total_coins >= price:
                             self.total_coins -= price
-                            self.upgrades[purchased_item_id] += 1
+                            self.upgrades[result] += 1
                             self.save_game_data()
                             self.shop_screen.total_coins = self.total_coins
                             self.shop_screen.upgrades = self.upgrades
@@ -323,6 +395,18 @@ class Game:
                     self.fullscreen = not self.fullscreen
                     self.apply_settings()
                     self.save_game_data()
+
+    def change_character(self, character_id):
+        self.selected_character = character_id
+        self.inventory_screen.update_data(self.selected_character, self.unlocked_guns, self.equipped_gun_id)
+        # We need to re-initialize the player and inventory screen to reflect the change
+        # A full re-initialization of the level is the simplest way to do this for now
+        if self.game_state == 'platformer' or self.game_state == 'boss_fight':
+             self.init_level(self.current_level)
+        else:
+            # If we are not in a level, we can just recreate the player object
+            self.player = Player(0, 0, self, upgrades=self.upgrades, character_id=self.selected_character)
+            self.inventory_screen.update_data(self.selected_character, self.unlocked_guns, self.equipped_gun_id)
 
     def update_game_state(self):
         if self.paused:
@@ -353,6 +437,13 @@ class Game:
             if self.boss:
                 self.boss.update()
             self.boss_projectiles.update()
+        elif self.game_state == 'gacha_animation':
+            if pygame.time.get_ticks() - self.gacha_animation_timer > 3000: # 3 seconds
+                self.game_state = 'shop_screen'
+                self.gacha_result = None
+
+        if not self.player:
+            return
 
         actions = self.controller.get_actions()
         if actions.get('jump'): 
@@ -536,32 +627,35 @@ class Game:
 
             self.back_button.draw(self.screen, pygame.mouse.get_pos())
             self.shop_button.draw(self.screen, pygame.mouse.get_pos())
+            self.inventory_button.draw(self.screen, pygame.mouse.get_pos())
         elif self.game_state == 'shop_screen':
             self.shop_screen.draw()
             self.back_button.draw(self.screen, pygame.mouse.get_pos())
-        elif self.game_state == 'settings':
-            self.draw_text("Settings", 60, SCREEN_WIDTH/2, 60, GOLD)
-            
-            # Volume control
-            self.draw_text("Volume", 30, SCREEN_WIDTH/2, 150, WHITE)
-            self.volume_down_button.draw(self.screen, mouse_pos)
-            self.draw_text(f"{int(self.volume * 100)}%", 40, SCREEN_WIDTH/2, 225, WHITE)
-            self.volume_up_button.draw(self.screen, mouse_pos)
+        elif self.game_state == 'inventory':
+            self.inventory_screen.draw()
+        elif self.game_state == 'gacha_animation':
+            self.screen.fill(BLACK)
+            if self.gacha_result:
+                gun_id = self.gacha_result['gun_id']
+                gun_data = GUN_DATA[gun_id]
+                
+                # Tier color
+                tier_color = WHITE
+                if self.gacha_result['tier'] == 'Rare':
+                    tier_color = BLUE
+                elif self.gacha_result['tier'] == 'Epic':
+                    tier_color = PURPLE
+                elif self.gacha_result['tier'] == 'Legendary':
+                    tier_color = GOLD
 
-            # Fullscreen toggle
-            self.fullscreen_button.text = f"Mode: {'Fullscreen' if self.fullscreen else 'Windowed'}"
-            self.fullscreen_button.draw(self.screen, mouse_pos)
+                self.draw_text(gun_data['name'], 50, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 100, tier_color)
+                self.draw_text(f"({self.gacha_result['tier']})", 30, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 40, tier_color)
 
-            # Power-up Legend
-            self.draw_text("Power-ups", 30, SCREEN_WIDTH/2, 400, GOLD)
-            self.draw_text("Damage Boost (Orange): Doubles your damage for 10 seconds.", 16, SCREEN_WIDTH/2, 440, WHITE)
-            self.draw_text("Health Boost (Green): Instantly restores 25 health.", 16, SCREEN_WIDTH/2, 470, WHITE)
-
-            # Gameplay Notes
-            self.draw_text("Gameplay Notes", 30, SCREEN_WIDTH/2, 520, GOLD)
-            self.draw_text("Double Jump is an upgrade! Purchase it in the Shop.", 16, SCREEN_WIDTH/2, 560, WHITE)
-
-            self.back_button.draw(self.screen, pygame.mouse.get_pos())
+                if self.gacha_result['is_duplicate']:
+                    self.draw_text("Duplicate!", 40, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 50, RED)
+                    self.draw_text(f"Refunded {500 // 2} coins", 20, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 100, YELLOW)
+                else:
+                    self.draw_text("New Gun Unlocked!", 40, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 50, GREEN)
         elif self.game_state in ['platformer', 'boss_fight', 'victory', 'game_over']:
             if self.game_state == 'platformer':
                 for sprite in self.all_sprites: self.screen.blit(sprite.image, (sprite.rect.x - self.camera_x, sprite.rect.y))

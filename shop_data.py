@@ -35,5 +35,19 @@ SHOP_ITEMS = {
         'description': 'Increases shot damage by 5.',
         'prices': [60, 100, 150],
         'max_level': 3,
-    }
+    },
+    'biker': {
+        'id': 'biker',
+        'name': 'Biker',
+        'description': 'Unlocks Biker character (Buff: Increased movement speed)',
+        'prices': [200],
+        'max_level': 1,
+    },
+    'punk': {
+        'id': 'punk',
+        'name': 'Punk',
+        'description': 'Unlocks Punk character (Buff: Higher jump height)',
+        'prices': [200],
+        'max_level': 1,
+    },
 }
