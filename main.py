@@ -261,6 +261,9 @@ class Game:
         self.platforms.empty(); self.coins.empty(); self.enemies.empty(); self.boss_gate_group.empty()
         
         self.player.rect.center = (200, 400)
+        self.player.hitbox.center = (200, 400)
+        self.player.vy = 0
+        self.player.on_ground = True
         self.all_sprites.add(self.player)
         self.camera_x = 0
         
