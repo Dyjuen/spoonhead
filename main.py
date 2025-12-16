@@ -189,23 +189,28 @@ class Game:
             self.sfx = {}
             self.death_sound = None
         self.start_button = Button(SCREEN_WIDTH/2 - 100, SCREEN_HEIGHT/2 - 50, 200, 50, "Start Game", BLUE, PURPLE)
-        self.quit_button = Button(SCREEN_WIDTH/2 - 100, SCREEN_HEIGHT/2 + 20, 200, 50, "Quit Game", RED, PURPLE)
-        self.settings_button = Button(SCREEN_WIDTH/2 - 100, SCREEN_HEIGHT/2 + 90, 200, 50, "Settings", GRAY, PURPLE)
+        self.settings_button = Button(SCREEN_WIDTH/2 - 100, SCREEN_HEIGHT/2 + 20, 200, 50, "Settings", GRAY, PURPLE)
+        self.quit_button = Button(SCREEN_WIDTH/2 - 100, SCREEN_HEIGHT/2 + 90, 200, 50, "Quit Game", RED, PURPLE)
         
         self.level_cards = []
 
-        self.shop_button = Button(SCREEN_WIDTH - 170, 20, 150, 50, "Shop", GOLD, PURPLE)
-        self.inventory_button = Button(SCREEN_WIDTH - 170, 90, 150, 50, "Inventory", GOLD, PURPLE)
+        self.shop_button = Button(SCREEN_WIDTH - 170, 20, 150, 50, "Shop", GOLD, PURPLE, font_size=16)
+        self.inventory_button = Button(SCREEN_WIDTH - 170, 90, 150, 50, "Inventory", GOLD, PURPLE, font_size=12)
         self.back_button = Button(20, 20, 150, 50, "Back", RED, PURPLE)
+        self.level_select_button = Button(SCREEN_WIDTH - 60, 20, 40, 40, "X", RED, DARK_GRAY)
+
 
         # Settings screen buttons
-        self.volume_down_button = Button(SCREEN_WIDTH/2 - 150, 200, 50, 50, "-", RED, PURPLE)
-        self.volume_up_button = Button(SCREEN_WIDTH/2 + 100, 200, 50, 50, "+", GREEN, PURPLE)
-        self.fullscreen_button = Button(SCREEN_WIDTH/2 - 150, 300, 300, 50, "Toggle Fullscreen", BLUE, PURPLE)
+        self.volume_down_button = Button(SCREEN_WIDTH/2 - 150, 275, 50, 50, "-", RED, PURPLE)
+        self.volume_up_button = Button(SCREEN_WIDTH/2 + 100, 275, 50, 50, "+", GREEN, PURPLE)
+        self.fullscreen_button = Button(SCREEN_WIDTH/2 - 150, 350, 300, 50, "Toggle Fullscreen", BLUE, PURPLE)
 
         # Pause menu buttons
-        self.resume_button = Button(SCREEN_WIDTH/2 - 100, SCREEN_HEIGHT/2 - 50, 200, 50, "Resume", BLUE, PURPLE)
+        self.resume_button = Button(SCREEN_WIDTH/2 - 100, SCREEN_HEIGHT/2 - 120, 200, 50, "Resume", BLUE, PURPLE)
+        self.settings_button_ingame = Button(SCREEN_WIDTH/2 - 100, SCREEN_HEIGHT/2 - 50, 200, 50, "Settings", GRAY, PURPLE)
         self.main_menu_button = Button(SCREEN_WIDTH/2 - 100, SCREEN_HEIGHT/2 + 20, 200, 50, "Main Menu", RED, PURPLE)
+        self.exit_button_ingame = Button(SCREEN_WIDTH/2 - 100, SCREEN_HEIGHT/2 + 90, 200, 50, "Exit Game", DARK_GRAY, PURPLE)
+        
         
         # Load gacha gun display images
         for gun_id, gun_info in GUN_DATA.items():
@@ -396,6 +401,8 @@ class Game:
             if self.paused:
                 if self.resume_button.is_clicked(event, mouse_pos):
                     self.paused = False
+                elif self.settings_button_ingame.is_clicked(event, mouse_pos):
+                    self.game_state = 'settings_ingame'
                 elif self.main_menu_button.is_clicked(event, mouse_pos):
                     self.paused = False
                     # self.total_coins += self.player.coins # Removed
@@ -404,7 +411,43 @@ class Game:
                     pygame.mixer.music.stop()
                     pygame.mixer.music.load(THEME_MUSIC)
                     pygame.mixer.music.play(-1)
+                elif self.exit_button_ingame.is_clicked(event, mouse_pos):
+                    self.save_game_data()
+                    self.running = False
                 return # Don't process other events when paused
+            
+            if self.game_state == 'settings_ingame':
+                if self.back_button.is_clicked(event, mouse_pos):
+                    self.game_state = 'platformer' # To return to the paused state, we set it back to platformer and then pause it
+                    self.paused = True
+                
+                if self.volume_down_button.is_clicked(event, mouse_pos):
+                    self.volume = max(0.0, round(self.volume - 0.1, 1))
+                    self.apply_settings()
+                    self.save_game_data()
+
+                if self.volume_up_button.is_clicked(event, mouse_pos):
+                    self.volume = min(1.0, round(self.volume + 0.1, 1))
+                    self.apply_settings()
+                    self.save_game_data()
+                
+                if self.fullscreen_button.is_clicked(event, mouse_pos):
+                    self.fullscreen = not self.fullscreen
+                    self.apply_settings()
+                    self.save_game_data()
+                return # Exclusive event handling for this state
+
+            # Handle level_select_button click inside the loop
+            if self.game_state in ['platformer', 'boss_fight'] and self.level_select_button.is_clicked(event, mouse_pos):
+                self.save_game_data()
+                self.game_state = 'level_selection'
+                pygame.mixer.music.stop()
+                pygame.mixer.music.load(THEME_MUSIC)
+                pygame.mixer.music.play(-1)
+                return
+
+
+
 
 
             
@@ -772,6 +815,28 @@ class Game:
             self.start_button.draw(self.screen, mouse_pos)
             self.settings_button.draw(self.screen, mouse_pos)
             self.quit_button.draw(self.screen, mouse_pos)
+        elif self.game_state == 'settings':
+            self.draw_text("Settings", 60, SCREEN_WIDTH/2, 100, GOLD)
+            
+            self.draw_text(f"Volume: {int(self.volume * 100)}%", 40, SCREEN_WIDTH/2, 225, WHITE)
+            self.volume_down_button.draw(self.screen, mouse_pos)
+            self.volume_up_button.draw(self.screen, mouse_pos)
+            
+            # Update text based on state
+            self.fullscreen_button.text = "Mode: Fullscreen" if self.fullscreen else "Mode: Windowed"
+            self.fullscreen_button.draw(self.screen, mouse_pos)
+            self.back_button.draw(self.screen, mouse_pos)
+        elif self.game_state == 'settings_ingame':
+            self.draw_text("Settings", 60, SCREEN_WIDTH/2, 100, GOLD)
+            
+            self.draw_text(f"Volume: {int(self.volume * 100)}%", 40, SCREEN_WIDTH/2, 225, WHITE)
+            self.volume_down_button.draw(self.screen, mouse_pos)
+            self.volume_up_button.draw(self.screen, mouse_pos)
+            
+            # Update text based on state
+            self.fullscreen_button.text = "Mode: Fullscreen" if self.fullscreen else "Mode: Windowed"
+            self.fullscreen_button.draw(self.screen, mouse_pos)
+            self.back_button.draw(self.screen, mouse_pos)
         elif self.game_state == 'level_selection':
             self.draw_text("Select Level", 40, SCREEN_WIDTH/2, 80, GOLD)
             self.draw_text(f"Total Coins: {self.total_coins}", 20, SCREEN_WIDTH/2, 140, GOLD)
@@ -802,7 +867,14 @@ class Game:
                 pygame.draw.rect(self.screen, (50, 50, 50), thumb_rect)
                 self.draw_text(str(level_num), 50, thumb_rect.centerx, thumb_rect.centery, border_color)
 
-                self.draw_text(level_data['name'], 18, card_rect.centerx, card_rect.y + 180, WHITE)
+                # self.draw_text(level_data['name'], 14, card_rect.centerx, card_rect.y + 180, WHITE)
+                # Split level name and draw on two lines
+                level_name_parts = level_data['name'].split(' ', 1)
+                if len(level_name_parts) > 1:
+                    self.draw_text(level_name_parts[0], 20, card_rect.centerx, card_rect.y + 165, WHITE)
+                    self.draw_text(level_name_parts[1], 20, card_rect.centerx, card_rect.y + 195, WHITE)
+                else:
+                    self.draw_text(level_data['name'], 20, card_rect.centerx, card_rect.y + 180, WHITE)
 
                 if not is_unlocked:
                     lock_overlay = pygame.Surface((card_width, card_height), pygame.SRCALPHA)
@@ -891,6 +963,8 @@ class Game:
                     self.screen.blit(sprite.image, (offset_x, offset_y))
                 
             if self.game_state in ['platformer', 'boss_fight'] and self.player and self.player.alive(): self.draw_ui()
+            self.level_select_button.draw(self.screen, mouse_pos)
+
 
             if self.game_state == 'boss_fight':
                 self.draw_boss_health_bar()
@@ -910,7 +984,9 @@ class Game:
             self.screen.blit(overlay, (0, 0))
             self.draw_text("Paused", 60, SCREEN_WIDTH/2, SCREEN_HEIGHT/4, GOLD)
             self.resume_button.draw(self.screen, pygame.mouse.get_pos())
+            self.settings_button_ingame.draw(self.screen, pygame.mouse.get_pos())
             self.main_menu_button.draw(self.screen, pygame.mouse.get_pos())
+            self.exit_button_ingame.draw(self.screen, pygame.mouse.get_pos())
 
         pygame.display.flip()
 
@@ -927,11 +1003,11 @@ class Game:
         
         # Coins
         # self.draw_text(f"Level Coins: {self.player.coins_collected_in_level}", 20, 10, 60, GOLD, align="topleft")
-        self.draw_text(f"Total Coins: {self.total_coins}", 20, 10, 90, GOLD, align="topleft") # Moved Total Coins up
+        self.draw_text(f"{self.total_coins}", 20, SCREEN_WIDTH - 100, 20, GOLD, align="topright")
         
         # Current Weapon
         current_weapon_name = self.player.unlocked_weapons[self.player.current_weapon_index].replace('_', ' ').title()
-        self.draw_text(f"Weapon: {current_weapon_name}", 20, 10, 120, WHITE, align="topleft") # Aligned left, below Total Coins
+        self.draw_text(f"{current_weapon_name}", 20, SCREEN_WIDTH - 100, 50, WHITE, align="topright")
 
         # Ultimate Meter
         if self.player.ultimate_ready:

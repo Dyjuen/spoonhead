@@ -176,10 +176,10 @@ class InventoryScreen:
             self.screen.blit(gun_img, (gun_rect.centerx - 30, gun_rect.y + 10))
 
             # Name
-            self.draw_text(gun_data['name'], 14, gun_rect.centerx, gun_rect.y + 85, WHITE)
+            self.draw_text(gun_data['name'], 8, gun_rect.centerx, gun_rect.y + 85, WHITE)
 
             # Tier
-            self.draw_text(gun_data['tier'], 12, gun_rect.centerx, gun_rect.y + 105, tier_color)
+            self.draw_text(gun_data['tier'], 10, gun_rect.centerx, gun_rect.y + 105, tier_color)
 
             # Locked overlay
             if not is_unlocked:
