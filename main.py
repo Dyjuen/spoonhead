@@ -2,6 +2,8 @@ import pygame
 import os
 import json
 import random
+import subprocess
+import sys
 from settings import *
 from controller import XboxController
 from sprites import Player, Boss, Projectile, BossProjectile, Platform, MovingPlatform, Coin, Enemy, BossGate, PowerUpBox, PowerUp, EnemyProjectile
@@ -11,6 +13,7 @@ from shop_data import SHOP_ITEMS
 from shop import ShopScreen
 from gun_data import GUN_DATA
 from inventory import InventoryScreen, TIER_COLORS # Import TIER_COLORS
+from benchmark import Benchmark
 
 SAVE_FILE = 'save.json'
 
@@ -74,6 +77,7 @@ class Game:
         
         self.shop_screen = ShopScreen(self.screen, self.total_coins, self.upgrades, SHOP_ITEMS)
         self.inventory_screen = InventoryScreen(self.screen, self.selected_character, self.unlocked_guns, GUN_DATA, CHARACTER_DATA, self.equipped_gun_id, self.unlocked_characters)
+        self.benchmark = Benchmark(SCREEN_WIDTH, SCREEN_HEIGHT)
 
         self.load_assets()
         self.apply_settings()
@@ -172,6 +176,9 @@ class Game:
         self.start_button = Button(SCREEN_WIDTH/2 - 100, SCREEN_HEIGHT/2 - 50, 200, 50, "Start Game", BLUE, PURPLE)
         self.settings_button = Button(SCREEN_WIDTH/2 - 100, SCREEN_HEIGHT/2 + 20, 200, 50, "Settings", GRAY, PURPLE)
         self.quit_button = Button(SCREEN_WIDTH/2 - 100, SCREEN_HEIGHT/2 + 90, 200, 50, "Quit Game", RED, PURPLE)
+        
+        # Benchmark Button
+        self.benchmark_button = Button(20, SCREEN_HEIGHT - 70, 220, 50, "Benchmark Test", DARK_GRAY, BLUE, font_size=12)
         
         self.level_cards = []
 
@@ -351,6 +358,9 @@ class Game:
                 if event.key == pygame.K_u and self.game_state in ['platformer', 'boss_fight'] and not self.paused:
                     self.u_pressed = True
                 
+                if event.key == pygame.K_F3:
+                    self.benchmark.toggle()
+                
                 # Jump handling (keyboard)
                 if (event.key == pygame.K_SPACE or event.key == pygame.K_w) and self.game_state in ['platformer', 'boss_fight'] and not self.paused:
                     if self.player:
@@ -397,6 +407,9 @@ class Game:
                 elif self.quit_button.is_clicked(event, mouse_pos):
                     self.save_game_data()
                     self.running = False
+                elif self.benchmark_button.is_clicked(event, mouse_pos):
+                    print("Launching Benchmark Runner...")
+                    subprocess.Popen([sys.executable, "benchmark_runner.py"])
             elif self.game_state == 'level_selection':
                 if self.back_button.is_clicked(event, mouse_pos): 
                     self.game_state = 'home_screen'
@@ -488,6 +501,7 @@ class Game:
             self.inventory_screen.update_data(self.selected_character, self.unlocked_guns, self.equipped_gun_id, self.unlocked_characters)
 
     def update_game_state(self):
+        self.benchmark.update(self.clock)
         if self.paused:
             return
 
@@ -709,6 +723,7 @@ class Game:
             self.start_button.draw(self.screen, mouse_pos)
             self.settings_button.draw(self.screen, mouse_pos)
             self.quit_button.draw(self.screen, mouse_pos)
+            self.benchmark_button.draw(self.screen, mouse_pos)
         elif self.game_state == 'settings':
             self.draw_text("Settings", 60, SCREEN_WIDTH/2, 100, GOLD)
             
@@ -860,6 +875,7 @@ class Game:
             self.resume_button.draw(self.screen, pygame.mouse.get_pos())
             self.main_menu_button.draw(self.screen, pygame.mouse.get_pos())
 
+        self.benchmark.draw(self.screen)
         pygame.display.flip()
 
     def draw_ui(self, player_alive=True): # Added player_alive argument
