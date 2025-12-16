@@ -572,7 +572,7 @@ class Game:
                             self.power_ups.add(power_up)
                 
                 # Check for collision with platforms
-                pygame.sprite.spritecollide(proj, self.platforms, True, False) # Kill projectile, keep platform
+                pygame.sprite.spritecollide(proj, self.platforms, True) # Kill projectile, keep platform
 
             if pygame.sprite.spritecollide(self.player, self.boss_gate_group, False): 
                 self.init_boss_fight()
