@@ -11,7 +11,6 @@ class SpriteSheet:
         try:
             self.sprite_sheet = pygame.image.load(filename).convert_alpha()
         except pygame.error as e:
-            print(f"Unable to load sprite sheet: {filename}")
             raise e
 
     def get_image(self, x, y, width, height):
@@ -119,7 +118,6 @@ class Player(pygame.sprite.Sprite):
             self.gun_image = pygame.image.load(gun_path).convert_alpha()
             self.gun_image = pygame.transform.scale(self.gun_image, (15, 15)) # Example scale
         except pygame.error:
-            print(f"Warning: Could not load gun image: {gun_path}")
             self.gun_image = pygame.Surface((15, 15), pygame.SRCALPHA)
             self.gun_image.fill(GRAY)
         
@@ -131,7 +129,6 @@ class Player(pygame.sprite.Sprite):
             Projectile.animation_frames_right = [scaled_bullet]
             Projectile.animation_frames_left = [pygame.transform.flip(scaled_bullet, True, False)]
         except pygame.error:
-            print(f"Warning: Could not load bullet image for {gun_id}: {bullet_path}")
             surf = pygame.Surface((20, 10), pygame.SRCALPHA); surf.fill(YELLOW)
             Projectile.animation_frames_right = [surf]
             Projectile.animation_frames_left = [surf]
@@ -204,7 +201,6 @@ class Player(pygame.sprite.Sprite):
     def switch_weapon(self):
         if self.is_emote_playing: return
         self.current_weapon_index = (self.current_weapon_index + 1) % len(self.unlocked_weapons)
-        print(f"Switched to: {self.unlocked_weapons[self.current_weapon_index]}") # For debugging
 
     def load_animations(self):
         player_size = (60, 60)
@@ -223,7 +219,6 @@ class Player(pygame.sprite.Sprite):
                             scaled_img = pygame.transform.scale(img, player_size)
                             loaded_frames.append(scaled_img)
                         except (pygame.error, FileNotFoundError):
-                            print(f"Warning: Could not load player body animation frame: {path}")
                             loaded_frames.append(pygame.Surface(player_size, pygame.SRCALPHA)) # Placeholder
                     self.body_animations[anim_type] = loaded_frames
                 else: # Handle single sprite sheet path
@@ -233,7 +228,6 @@ class Player(pygame.sprite.Sprite):
                         scaled_frames = [pygame.transform.scale(frame, player_size) for frame in frames]
                         self.body_animations[anim_type] = scaled_frames
                     except (pygame.error, FileNotFoundError):
-                        print(f"Warning: Could not load player body animation: {sprite_path}")
                         placeholder_frame = pygame.Surface(player_size, pygame.SRCALPHA); placeholder_frame.fill(BLUE)
                         self.body_animations[anim_type] = [placeholder_frame] * 4
             else: # Fallback if action sprite path not defined
@@ -253,7 +247,6 @@ class Player(pygame.sprite.Sprite):
                             scaled_img = pygame.transform.scale(img, hand_size)
                             loaded_frames.append(scaled_img)
                         except (pygame.error, FileNotFoundError):
-                            print(f"Warning: Could not load player hand animation frame: {path}")
                             loaded_frames.append(pygame.Surface(hand_size, pygame.SRCALPHA)) # Placeholder
                 else: # Assume it's a single string path
                     try:
@@ -261,7 +254,6 @@ class Player(pygame.sprite.Sprite):
                         scaled_img = pygame.transform.scale(img, hand_size)
                         loaded_frames.append(scaled_img)
                     except (pygame.error, FileNotFoundError):
-                        print(f"Warning: Could not load player hand animation: {hand_path_val}")
                         loaded_frames.append(pygame.Surface(hand_size, pygame.SRCALPHA)) # Placeholder
                 
                 # Match length to body anim if possible, else use a list of 1 for single images
@@ -293,7 +285,7 @@ class Player(pygame.sprite.Sprite):
                     scaled_img = pygame.transform.scale(img, player_size)
                     self.emote_animations[emote_name] = [scaled_img] # Use name as key
                 except (pygame.error, FileNotFoundError):
-                    print(f"Warning: Could not load emote animation: {emote_path}")
+                    pass
 
     def animate(self):
         now = pygame.time.get_ticks()
@@ -480,7 +472,6 @@ class Player(pygame.sprite.Sprite):
         # Power-up timer
         if self.damage_boost_active and pygame.time.get_ticks() - self.damage_boost_timer > self.power_up_duration:
             self.damage_boost_active = False
-            print("Damage boost deactivated") # for debugging
             
         return sfx_events
 
@@ -498,7 +489,7 @@ class Player(pygame.sprite.Sprite):
             self.jumps_left -= 1
             return 'jump'
         elif not self.double_jump_enabled and self.jumps_left == 0:
-            print("DEBUG: Double jump not unlocked! Purchase it from the shop.")
+            pass
         return None
 
     def dash(self):
@@ -575,19 +566,16 @@ class Player(pygame.sprite.Sprite):
         if power_up_type == 'damage_boost':
             self.damage_boost_active = True
             self.damage_boost_timer = pygame.time.get_ticks()
-            print("Damage boost activated!") # for debugging
         elif power_up_type == 'health':
             self.health += 25
             if self.health > self.max_health:
                 self.health = self.max_health
-            print("Health boost activated!") # for debugging
 
     def increase_ultimate_meter(self):
         if not self.ultimate_ready:
             self.ultimate_meter += 1
             if self.ultimate_meter >= self.ultimate_max_meter:
                 self.ultimate_ready = True
-                print("Ultimate ready!") # for debugging
         # Trigger buff on kill for Cyborg only
         if self.buff == 'damage_boost':
             self.apply_buff()
@@ -597,7 +585,6 @@ class Player(pygame.sprite.Sprite):
         if self.ultimate_ready:
             self.ultimate_meter = 0
             self.ultimate_ready = False
-            print("Ultimate activated! Massive shot fired!") # for debugging
             # Create a massive projectile
             # For simplicity, let's make it deal a fixed high damage and be larger
             massive_damage = 50
@@ -642,7 +629,6 @@ class Enemy(pygame.sprite.Sprite):
             for frame in frames:
                 self.animations['walk'].append(pygame.transform.scale(frame, enemy_size))
         except (pygame.error, FileNotFoundError):
-            print(f"Warning: Could not load enemy animation: {ENEMY_WALK_SPRITE}")
             placeholder = pygame.Surface(enemy_size); placeholder.fill(RED)
             self.animations['walk'] = [placeholder]
 
@@ -729,7 +715,7 @@ class Projectile(pygame.sprite.Sprite):
                 Projectile.animation_frames_right.append(scaled)
                 Projectile.animation_frames_left.append(pygame.transform.flip(scaled, True, False))
         except pygame.error:
-            print("Warning: Player projectile images not found."); surf = pygame.Surface(bullet_size, pygame.SRCALPHA); surf.fill(YELLOW)
+            surf = pygame.Surface(bullet_size, pygame.SRCALPHA); surf.fill(YELLOW)
             Projectile.animation_frames_right = [surf]*2; Projectile.animation_frames_left = [surf]*2
 
     def __init__(self, x, y, vx, vy, damage=10):
@@ -770,12 +756,33 @@ class MovingPlatform(Platform):
 class Coin(pygame.sprite.Sprite):
     def __init__(self, x, y):
         super().__init__()
-        self.image = pygame.Surface((20, 20), pygame.SRCALPHA)
-        pygame.draw.circle(self.image, GOLD, (10, 10), 10); pygame.draw.circle(self.image, YELLOW, (10, 10), 8)
+        self.animations = {}
+        self.load_animations()
+        self.frame_index = 0
+        self.last_frame_update = pygame.time.get_ticks()
+
+        self.image = self.animations['idle'][self.frame_index] # Set initial image
         self.rect = self.image.get_rect(center=(x, y))
         self.bob_offset, self.bob_range, self.original_y = random.uniform(0, 2*math.pi), 4, y
 
+    def load_animations(self):
+        self.animations['idle'] = []
+        coin_size = (32, 32) # Increased size for better visibility
+        try:
+            sheet = SpriteSheet(COIN_SPRITE_PATH)
+            frames = sheet.get_animation_frames(16, 16) # Use provided frame dimensions
+            self.animations['idle'] = [pygame.transform.scale(frame, coin_size) for frame in frames]
+        except (pygame.error, FileNotFoundError):
+            placeholder_frame = pygame.Surface(coin_size, pygame.SRCALPHA); placeholder_frame.fill(GOLD)
+            self.animations['idle'] = [placeholder_frame] * 15 # Use number of frames provided
+
     def update(self):
+        now = pygame.time.get_ticks()
+        if now - self.last_frame_update > 100: # Adjust animation speed as needed
+            self.last_frame_update = now
+            self.frame_index = (self.frame_index + 1) % len(self.animations['idle'])
+            self.image = self.animations['idle'][self.frame_index]
+
         self.rect.y = self.original_y + int(math.sin(self.bob_offset) * self.bob_range); self.bob_offset += 0.1
 
 class BossGate(pygame.sprite.Sprite):
@@ -787,38 +794,68 @@ class BossGate(pygame.sprite.Sprite):
 class PowerUpBox(pygame.sprite.Sprite):
     def __init__(self, x, y, power_up_type='damage_boost', health=50):
         super().__init__()
-        self.image = pygame.Surface((40, 40)); self.image.fill(GRAY)
-        pygame.draw.rect(self.image, WHITE, self.image.get_rect(), 3)
-        self.rect = self.image.get_rect(topleft=(x, y))
+        self.animations = {}
+        self.load_animations()
+        self.frame_index = 0
+        self.last_frame_update = pygame.time.get_ticks()
+
+        self.image = self.animations['idle'][self.frame_index]
+        self.rect = self.image.get_rect(center=(x, y))
         self.power_up_type = power_up_type
         self.health = health
-        
+        self.bob_offset = random.uniform(0, 2*math.pi)
+        self.bob_range = 4
+        self.original_y = y
+
+    def load_animations(self):
+        self.animations['idle'] = []
+        crate_size = (64, 64)
+        try:
+            sheet = SpriteSheet(CRATE_SPRITE_PATH)
+            frames = sheet.get_animation_frames(48, 48)
+            self.animations['idle'] = [pygame.transform.scale(frame, crate_size) for frame in frames]
+        except (pygame.error, FileNotFoundError):
+            placeholder_frame = pygame.Surface(crate_size, pygame.SRCALPHA); placeholder_frame.fill(GRAY)
+            self.animations['idle'] = [placeholder_frame] * 6
+
     def take_damage(self, amount):
         self.health -= amount
         if self.health <= 0:
             self.kill()
-            # Placeholder for spawning a PowerUp, will be handled in main.py
-            return True
-        return False
+            return self.power_up_type
+        return None
 
     def update(self):
-        # A static box, so update does nothing for now
-        pass
+        now = pygame.time.get_ticks()
+        if now - self.last_frame_update > 100:
+            self.last_frame_update = now
+            self.frame_index = (self.frame_index + 1) % len(self.animations['idle'])
+            self.image = self.animations['idle'][self.frame_index]
+
+        self.rect.y = self.original_y + int(math.sin(self.bob_offset) * self.bob_range); self.bob_offset += 0.1
 
 class PowerUp(pygame.sprite.Sprite):
     def __init__(self, x, y, power_up_type):
         super().__init__()
         self.power_up_type = power_up_type
-        self.image = pygame.Surface((25, 25), pygame.SRCALPHA)
+        
+        power_up_size = (24, 24)
+        if self.power_up_type == 'damage_boost':
+            try:
+                self.image = pygame.image.load(DAMAGE_POWERUP_PATH).convert_alpha()
+            except (pygame.error, FileNotFoundError):
+                self.image = pygame.Surface(power_up_size, pygame.SRCALPHA); self.image.fill(ORANGE)
+        elif self.power_up_type == 'health':
+            try:
+                self.image = pygame.image.load(HEALTH_POWERUP_PATH).convert_alpha()
+            except (pygame.error, FileNotFoundError):
+                self.image = pygame.Surface(power_up_size, pygame.SRCALPHA); self.image.fill(GREEN)
+        else: # Default or unknown power-up
+            self.image = pygame.Surface(power_up_size, pygame.SRCALPHA); self.image.fill(WHITE)
+
+        self.image = pygame.transform.scale(self.image, power_up_size)
         self.rect = self.image.get_rect(center=(x, y))
 
-        # Assign color/image based on type
-        if self.power_up_type == 'damage_boost':
-            self.image.fill(ORANGE)
-        elif self.power_up_type == 'health':
-            self.image.fill(GREEN)
-        else: # Default or unknown power-up
-            self.image.fill(WHITE)
         pygame.draw.rect(self.image, BLACK, self.image.get_rect(), 2) # Border
 
         # Add bobbing attributes
@@ -857,6 +894,11 @@ class Boss(pygame.sprite.Sprite):
         self.frame_index = 0
         self.last_frame_update = pygame.time.get_ticks()
 
+        self.dying_state = None # 'falling', 'exploding', None
+        self.vy = 0 # Vertical velocity for falling
+        self.gravity = 0.5 # Gravity for falling
+        self.explosion_start_time = 0 # To track explosion duration
+
         self.image = self.animations[self.action][self.frame_index] # Set initial image
         self.rect = self.image.get_rect(center=(x, y))
         self.original_image = self.image.copy() # Store original for flashing
@@ -873,7 +915,6 @@ class Boss(pygame.sprite.Sprite):
             frames = sheet.get_animation_frames(72, 72) # Use provided frame dimensions
             self.animations['idle'] = [pygame.transform.scale(frame, boss_size) for frame in frames]
         except (pygame.error, FileNotFoundError):
-            print(f"Warning: Could not load boss idle animation: {BOSS_IDLE_SPRITE_PATH}")
             placeholder_frame = pygame.Surface(boss_size, pygame.SRCALPHA); placeholder_frame.fill(PURPLE)
             self.animations['idle'] = [placeholder_frame] * 4
 
@@ -883,7 +924,6 @@ class Boss(pygame.sprite.Sprite):
             frames = sheet.get_animation_frames(72, 72) # Use provided frame dimensions
             self.animations['walk'] = [pygame.transform.scale(frame, boss_size) for frame in frames]
         except (pygame.error, FileNotFoundError):
-            print(f"Warning: Could not load boss walk animation: {BOSS_WALK_SPRITE_PATH}")
             placeholder_frame = pygame.Surface(boss_size, pygame.SRCALPHA); placeholder_frame.fill(DARK_PURPLE)
             self.animations['walk'] = [placeholder_frame] * 4
         
@@ -893,9 +933,18 @@ class Boss(pygame.sprite.Sprite):
             frames = sheet.get_animation_frames(72, 72) # Use provided frame dimensions
             self.animations['death'] = [pygame.transform.scale(frame, boss_size) for frame in frames]
         except (pygame.error, FileNotFoundError):
-            print(f"Warning: Could not load boss death animation: {BOSS_DEATH_SPRITE_PATH}")
             placeholder_frame = pygame.Surface(boss_size, pygame.SRCALPHA); placeholder_frame.fill(RED)
             self.animations['death'] = [placeholder_frame] * 4
+        
+        # Load Explosion animation
+        explosion_size = (128, 128) # Larger size for explosion effect
+        try:
+            sheet = SpriteSheet(BOSS_EXPLOSION_SPRITE_PATH)
+            frames = sheet.get_animation_frames(64, 52) # Use provided frame dimensions for explosion
+            self.animations['explosion'] = [pygame.transform.scale(frame, explosion_size) for frame in frames]
+        except (pygame.error, FileNotFoundError):
+            placeholder_frame = pygame.Surface(explosion_size, pygame.SRCALPHA); placeholder_frame.fill(ORANGE)
+            self.animations['explosion'] = [placeholder_frame] * 32 # Use number of frames provided
 
     def animate(self):
         now = pygame.time.get_ticks()
@@ -904,23 +953,22 @@ class Boss(pygame.sprite.Sprite):
             current_animation = self.animations['idle'] # Fallback
 
         animation_speed = 150 # Default speed
+        is_looping_animation = True
+
         if self.action == 'death':
             animation_speed = 200 # Slower death animation
-            # Don't loop death animation
-            if self.frame_index == len(current_animation) - 1:
-                # Keep showing the last frame of death animation
-                new_image = current_animation[self.frame_index]
-                if self.direction == -1:
-                    new_image = pygame.transform.flip(new_image, True, False)
-                center = self.rect.center
-                self.image, self.rect = new_image, new_image.get_rect(center=center)
-                self.original_image = self.image.copy()
-                return
+            is_looping_animation = False
+        elif self.action == 'explosion':
+            animation_speed = 30 # Faster explosion animation
+            is_looping_animation = False
 
         if now - self.last_frame_update > animation_speed:
             self.last_frame_update = now
-            self.frame_index = (self.frame_index + 1) % len(current_animation)
             
+            if is_looping_animation or self.frame_index < len(current_animation) - 1:
+                self.frame_index = (self.frame_index + 1) % len(current_animation)
+            # If it's a non-looping animation and we're at the last frame, keep it there.
+
             new_image = current_animation[self.frame_index]
             if self.direction == -1: # Assuming Boss also flips based on direction
                 new_image = pygame.transform.flip(new_image, True, False)
@@ -945,12 +993,39 @@ class Boss(pygame.sprite.Sprite):
             self.image.fill(RED)
 
     def update(self):
-        if self.action == 'death':
-            self.animate() # Continue death animation
-            if self.frame_index == len(self.animations['death']) - 1 and pygame.time.get_ticks() - self.last_frame_update > 150:
-                self.kill() # Only kill after last frame of death animation
-            return # Stop other updates if boss is dying
+        if self.dying_state == 'falling':
+            self.vy += self.gravity
+            self.rect.y += self.vy
 
+            # Collision with platforms for falling
+            # Assuming self.game.platforms is accessible and contains all platforms
+            for platform in self.game.platforms:
+                if platform.rect.colliderect(self.rect) and self.vy > 0: # Only check if falling
+                    self.rect.bottom = platform.rect.top
+                    self.vy = 0
+                    self.dying_state = 'exploding'
+                    self.explosion_start_time = pygame.time.get_ticks()
+                    self.game.start_screen_shake(duration=500, intensity=5) # 0.5s shake, medium intensity
+                    self.game._play_sfx('explosion') # Play explosion sound
+                    break # Stop checking for platforms once landed
+
+            # Continue death animation while falling
+            self.animate()
+            return # Stop other updates if boss is in dying state
+
+        elif self.dying_state == 'exploding':
+            # Set action to explosion and animate
+            self.action = 'explosion'
+            self.animate() # This will ensure the explosion frames are played
+
+            # After explosion animation, kill the boss and transition to victory
+            # Check if explosion animation has finished playing
+            if self.frame_index >= len(self.animations['explosion']) - 1:
+                self.kill()
+                self.game.game_state = 'victory' # Transition to victory after explosion
+                self.game._play_sfx('victory') # Play victory sound
+            return # Stop other updates during explosion
+        # If not dying, proceed with normal boss behavior
         # Simple horizontal movement for now
         self.rect.x += self.speed * self.direction
         if self.rect.left < 0 or self.rect.right > SCREEN_WIDTH:
@@ -962,7 +1037,7 @@ class Boss(pygame.sprite.Sprite):
         self.animate() # Update boss animation
 
         now = pygame.time.get_ticks() # Use pygame.time.get_ticks() for consistency
-        if now - self.last_shot_time > self.shoot_interval:
+        if now - self.last_shot_time > self.shoot_interval and self.shoot_interval != float('inf'): # Check if boss is still attacking
             self.last_shot_time = now
             if self.boss_type == 1:
                 self.shoot_pattern_boss1()
@@ -1024,8 +1099,15 @@ class Boss(pygame.sprite.Sprite):
         self.health -= amount
         if self.health <= 0:
             self.health = 0
-            self.action = 'death' # Set action to death
-            # self.kill() will be called after death animation plays, or in update if health remains 0
+            if not self.dying_state: # First time entering dying state
+                self.dying_state = 'falling'
+                self.action = 'death' # Show death animation while falling
+                self.frame_index = 0 # Start death animation from beginning
+                self.game._play_sfx('explosion') # Play explosion sound (was death)
+                # Disable boss movement and attacks immediately
+                self.speed = 0
+                self.shoot_interval = float('inf') # Stop attacking
+                self.death_fall_start_time = pygame.time.get_ticks()
             return
         self.is_flashing = True
         self.flash_timer = pygame.time.get_ticks()

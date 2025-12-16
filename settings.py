@@ -161,6 +161,15 @@ BOSS_HURT_SPRITE = "assets/orangjahat/Hurt.png"
 BOSS_IDLE_SPRITE_PATH = "assets/boss/Idle.png"
 BOSS_WALK_SPRITE_PATH = "assets/boss/Walk.png"
 BOSS_DEATH_SPRITE_PATH = "assets/boss/Death.png"
+BOSS_EXPLOSION_SPRITE_PATH = "assets/boss/explosion.png"
+
+# Coin Sprites
+COIN_SPRITE_PATH = "assets/coin.png"
+
+# Power-up Sprites
+CRATE_SPRITE_PATH = "assets/crate.png"
+HEALTH_POWERUP_PATH = "assets/health.png"
+DAMAGE_POWERUP_PATH = "assets/damage.png"
 
 # Sound Effects
 DEATH_SOUND = "assets/audio/mati.mp3"
