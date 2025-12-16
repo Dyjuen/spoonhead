@@ -570,6 +570,9 @@ class Game:
                             power_up = PowerUp(box.rect.centerx, box.rect.centery, box.power_up_type)
                             self.all_sprites.add(power_up)
                             self.power_ups.add(power_up)
+                
+                # Check for collision with platforms
+                pygame.sprite.spritecollide(proj, self.platforms, True, False) # Kill projectile, keep platform
 
             if pygame.sprite.spritecollide(self.player, self.boss_gate_group, False): 
                 self.init_boss_fight()
