@@ -26,6 +26,16 @@ class SpriteSheet:
             frames.append(frame)
         return frames
 
+    def get_frames_from_grid(self, rows, cols, frame_width, frame_height):
+        frames = []
+        for row in range(rows):
+            for col in range(cols):
+                x = col * frame_width
+                y = row * frame_height
+                frame = self.get_image(x, y, frame_width, frame_height)
+                frames.append(frame)
+        return frames
+
 class Player(pygame.sprite.Sprite):
     def __init__(self, x, y, game, upgrades=None, character_id=None, equipped_gun_id=None, upgrades_data=None):
         super().__init__()
@@ -203,8 +213,8 @@ class Player(pygame.sprite.Sprite):
         self.current_weapon_index = (self.current_weapon_index + 1) % len(self.unlocked_weapons)
 
     def load_animations(self):
-        player_size = (60, 60)
-        hand_size = (60, 60) # Example size, may need adjustment
+        player_size = (62, 62)
+        hand_size = (62, 62) # Example size
 
         # Load body animations
         self.body_animations = {'idle': [], 'run': [], 'jump': [], 'double_jump': []}
@@ -427,6 +437,7 @@ class Player(pygame.sprite.Sprite):
         offset = self.hitbox_offset_x if self.facing_right else -self.hitbox_offset_x
         self.rect.centerx = self.hitbox.centerx + offset
 
+        # Vertical movement (gravity)
         self.vy += self.gravity
         if self.vy > 15: self.vy = 15
         self.hitbox.y += self.vy
@@ -457,10 +468,10 @@ class Player(pygame.sprite.Sprite):
                 self.hitbox.x += plat.speed * plat.direction
             else:
                 self.hitbox.y += plat.speed * plat.direction
-            # Update rect juga
-            self.rect.centerx = self.hitbox.centerx + (self.hitbox_offset_x if self.facing_right else -self.hitbox_offset_x)
-            self.rect.centery = self.hitbox.centery
-        self.rect.centery = self.hitbox.centery
+        
+        self.rect.bottom = self.hitbox.bottom
+        # Re-center X after potential moving platform adjustments
+        self.rect.centerx = self.hitbox.centerx + (self.hitbox_offset_x if self.facing_right else -self.hitbox_offset_x)
 
         self.animate()
 
@@ -612,6 +623,7 @@ class Enemy(pygame.sprite.Sprite):
         self.last_frame_update = pygame.time.get_ticks()
         self.image = self.animations[self.action][self.frame_index]
         self.rect = self.image.get_rect(center=(x, y))
+        self.hitbox = self.rect.copy()
         self.health, self.speed, self.direction = 30, speed, 1
         self.start_x, self.patrol_distance = x, patrol_distance
         self.shoot_cooldown, self.last_shot_time = shoot_cooldown, time.time()
@@ -619,26 +631,43 @@ class Enemy(pygame.sprite.Sprite):
         # Flashing effect for damage
         self.flash_timer = 0
         self.original_image = self.image
+        self.vy = 0
+        self.gravity = 0.8
+        self.on_ground = False
 
     def load_animations(self):
-        self.animations = {'walk': []}
-        enemy_size = (64, 64)
-        try:
-            sheet = SpriteSheet(ENEMY_WALK_SPRITE)
-            frames = sheet.get_animation_frames(48, 48) 
-            for frame in frames:
-                self.animations['walk'].append(pygame.transform.scale(frame, enemy_size))
-        except (pygame.error, FileNotFoundError):
-            placeholder = pygame.Surface(enemy_size); placeholder.fill(RED)
-            self.animations['walk'] = [placeholder]
+        self.animations = {}
+        enemy_size = (106, 106) # Increased size by 10 pixels
+        
+        animation_types = ['walk', 'idle', 'attack1', 'attack2', 'attack3', 'attack4', 'death', 'hurt', 'special']
+        
+        for anim_type in animation_types:
+            path = f"assets/orangjahat/{anim_type.capitalize()}.png"
+            try:
+                sheet = SpriteSheet(path)
+                frames = sheet.get_animation_frames(96, 96)
+                self.animations[anim_type] = [pygame.transform.scale(frame, enemy_size) for frame in frames]
+            except Exception as e:
+                # If a specific animation is missing, create a placeholder
+                placeholder_surface = pygame.Surface(enemy_size, pygame.SRCALPHA)
+                placeholder_surface.fill((255, 0, 255, 128)) # Pink placeholder
+                self.animations[anim_type] = [placeholder_surface] * 6
 
     def animate(self):
         now = pygame.time.get_ticks()
+        
+        # Ensure self.action is valid, otherwise default to 'idle'
+        if self.action not in self.animations:
+            self.action = 'idle'
+            
+        current_animation = self.animations[self.action]
+        
         if now - self.last_frame_update > 120:
             self.last_frame_update = now
-            self.frame_index = (self.frame_index + 1) % len(self.animations[self.action])
-            new_image = self.animations[self.action][self.frame_index]
-            if self.direction == -1: new_image = pygame.transform.flip(new_image, True, False)
+            self.frame_index = (self.frame_index + 1) % len(current_animation)
+            new_image = current_animation[self.frame_index]
+            if self.direction == -1:
+                new_image = pygame.transform.flip(new_image, True, False)
             center = self.rect.center
             self.image, self.rect = new_image, new_image.get_rect(center=center)
             self.original_image = self.image
@@ -652,16 +681,45 @@ class Enemy(pygame.sprite.Sprite):
                 flash_image.fill((255, 255, 255), special_flags=pygame.BLEND_ADD)
                 self.image = flash_image
 
-    def update(self, player, all_sprites_group, enemy_projectiles_group):
-        self.rect.x += self.speed * self.direction
-        if abs(self.rect.centerx - self.start_x) > self.patrol_distance: self.direction *= -1
+    def update(self, player, all_sprites_group, enemy_projectiles_group, platforms):
+        # State logic
+        if self.speed > 0:
+            self.action = 'walk'
+        else:
+            self.action = 'idle'
+            
+        # Horizontal movement
+        self.hitbox.x += self.speed * self.direction
+        if abs(self.hitbox.centerx - self.start_x) > self.patrol_distance:
+            self.direction *= -1
+
+        # Vertical movement (gravity)
+        self.vy += self.gravity
+        if self.vy > 15: self.vy = 15
+        self.hitbox.y += self.vy
+        self.on_ground = False
+
+        # Vertical collision with platforms
+        for platform in platforms:
+            if platform.rect.colliderect(self.hitbox) and self.vy > 0:
+                self.hitbox.bottom = platform.rect.top
+                self.vy = 0
+                self.on_ground = True
+        
+        self.rect.bottom = self.hitbox.bottom
+        self.rect.centerx = self.hitbox.centerx
+
         self.animate()
+        
+        # Shooting logic
         if abs(player.rect.centerx - self.rect.centerx) < self.detection_range and time.time() - self.last_shot_time > self.shoot_cooldown:
             self.shoot_at_player(player, all_sprites_group, enemy_projectiles_group)
             self.last_shot_time = time.time()
 
     def shoot_at_player(self, player, all_sprites, projectiles_group):
-        dx, dy = player.rect.centerx - self.rect.centerx, player.rect.centery - self.rect.centery
+        dx = player.rect.centerx - self.rect.centerx
+        # Aim for the player's lower body instead of their center
+        dy = (player.rect.bottom - 10) - self.rect.centery
         distance = math.hypot(dx, dy)
         if distance == 0: return
         vx, vy = (dx / distance) * 6, (dy / distance) * 6
@@ -787,9 +845,33 @@ class Coin(pygame.sprite.Sprite):
 
 class BossGate(pygame.sprite.Sprite):
     def __init__(self, x, y):
-        super().__init__(); self.image = pygame.Surface((80, 120), pygame.SRCALPHA); self.image.fill(PURPLE)
-        pygame.draw.rect(self.image, GOLD, self.image.get_rect(), 5); font = pygame.font.Font(None, 30)
-        self.image.blit(font.render("BOSS", True, WHITE), (15, 45)); self.rect = self.image.get_rect(center=(x, y))
+        super().__init__()
+        self.animations = {}
+        self.load_animations()
+        self.frame_index = 0
+        self.last_frame_update = pygame.time.get_ticks()
+        self.image = self.animations['idle'][self.frame_index]
+        self.rect = self.image.get_rect(center=(x, y))
+
+    def load_animations(self):
+        self.animations['idle'] = []
+        portal_size = (128, 128) # Scaled up size for better visibility
+        try:
+            for i in range(1, 8): # Load portal1_frame_1.png to portal1_frame_7.png
+                path = os.path.join(PORTAL_IMAGES_DIR, f"portal1_frame_{i}.png")
+                img = pygame.image.load(path).convert_alpha()
+                self.animations['idle'].append(pygame.transform.scale(img, portal_size))
+        except (pygame.error, FileNotFoundError):
+            placeholder_frame = pygame.Surface(portal_size, pygame.SRCALPHA)
+            placeholder_frame.fill(PURPLE)
+            self.animations['idle'] = [placeholder_frame] * 7
+
+    def update(self):
+        now = pygame.time.get_ticks()
+        if now - self.last_frame_update > 100: # Animation speed
+            self.last_frame_update = now
+            self.frame_index = (self.frame_index + 1) % len(self.animations['idle'])
+            self.image = self.animations['idle'][self.frame_index]
 
 class PowerUpBox(pygame.sprite.Sprite):
     def __init__(self, x, y, power_up_type='damage_boost', health=50):
@@ -809,7 +891,7 @@ class PowerUpBox(pygame.sprite.Sprite):
 
     def load_animations(self):
         self.animations['idle'] = []
-        crate_size = (64, 64)
+        crate_size = (80, 80)
         try:
             sheet = SpriteSheet(CRATE_SPRITE_PATH)
             frames = sheet.get_animation_frames(48, 48)
@@ -839,7 +921,7 @@ class PowerUp(pygame.sprite.Sprite):
         super().__init__()
         self.power_up_type = power_up_type
         
-        power_up_size = (24, 24)
+        power_up_size = (32, 32)
         if self.power_up_type == 'damage_boost':
             try:
                 self.image = pygame.image.load(DAMAGE_POWERUP_PATH).convert_alpha()
@@ -907,7 +989,7 @@ class Boss(pygame.sprite.Sprite):
 
     def load_animations(self):
         self.animations = {'idle': [], 'walk': [], 'death': []}
-        boss_size = (72, 72) # Adjust size to exact frame dimensions
+        boss_size = (96, 96) # Adjust size to exact frame dimensions
 
         # Load Idle animation
         try:

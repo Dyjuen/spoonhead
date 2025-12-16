@@ -34,7 +34,7 @@ class ShopScreen:
         self.item_buttons = []
         self.scroll_y = 0
         self.setup_buttons()
-        self.buy_crate_button = Button(SCREEN_WIDTH / 2 - 150, SCREEN_HEIGHT - 100, 300, 60, "Buy Gun Crate (500)", GOLD, DARK_PURPLE)
+        self.buy_crate_button = Button(SCREEN_WIDTH - 320, 100, 300, 60, "Buy Gun Crate (500)", GOLD, DARK_PURPLE)
 
     def setup_buttons(self):
         self.item_buttons = []
@@ -88,16 +88,16 @@ class ShopScreen:
                 pygame.draw.rect(self.screen, GOLD, button.rect, 2)
                 
                 # Display item name, description and level
-                self.draw_text(item_data['name'], 22, button.rect.x + 150, button.rect.y + 30,align='center')
-                self.draw_text(item_data['description'], 16, button.rect.x + 250, button.rect.y + 60,align='center')
+                self.draw_text(item_data['name'], 18, button.rect.x + 150, button.rect.y + 30,align='center')
+                self.draw_text(item_data['description'], 12, button.rect.x + 250, button.rect.y + 60,align='center')
                 if max_level > 1:
-                    self.draw_text(f"Level: {current_level}/{max_level}", 16, button.rect.x + 150, button.rect.y + 90,align='center')
+                    self.draw_text(f"Level: {current_level}/{max_level}", 12, button.rect.x + 150, button.rect.y + 90,align='center')
 
                 if current_level >= max_level:
                     if max_level == 1:
-                        self.draw_text("Purchased", 20, buy_button.rect.centerx, buy_button.rect.centery, GREEN)
+                        self.draw_text("Purchased", 16, buy_button.rect.centerx, buy_button.rect.centery, GREEN)
                     else:
-                        self.draw_text("Max Level", 24, buy_button.rect.centerx, buy_button.rect.centery, GREEN)
+                        self.draw_text("Max Level", 20, buy_button.rect.centerx, buy_button.rect.centery, GREEN)
                 else:
                     price = item_data['prices'][current_level]
                     can_afford = self.total_coins >= price
@@ -105,6 +105,7 @@ class ShopScreen:
                     buy_button.text = f"Buy ({price})"
                     buy_button.color = GREEN if can_afford else GRAY
                     buy_button.hover_color = ORANGE if can_afford else GRAY
+                    buy_button.font = pygame.font.Font(PIXEL_FONT, 16) # Set font size for buy button
                     
                     buy_button.draw(self.screen, mouse_pos)
         

@@ -165,6 +165,7 @@ BOSS_EXPLOSION_SPRITE_PATH = "assets/boss/explosion.png"
 
 # Coin Sprites
 COIN_SPRITE_PATH = "assets/coin.png"
+PORTAL_IMAGES_DIR = "assets/portal"
 
 # Power-up Sprites
 CRATE_SPRITE_PATH = "assets/crate.png"

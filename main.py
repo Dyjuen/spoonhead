@@ -15,6 +15,9 @@ from parallax import Parallax
 
 SAVE_FILE = 'save.json'
 
+def collide_hitbox(sprite1, sprite2):
+    return sprite1.hitbox.colliderect(sprite2.hitbox)
+
 class Game:
     """Main game class with a multi-level structure and persistence."""
 
@@ -22,7 +25,7 @@ class Game:
         pygame.init()
         pygame.mixer.init()
         pygame.mixer.set_num_channels(16)
-        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.DOUBLEBUF)
         Projectile.load_images()
         pygame.display.set_caption("Spoonhead")
         self.clock = pygame.time.Clock()
@@ -149,7 +152,7 @@ class Game:
         if self.fullscreen:
             self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.FULLSCREEN)
         else:
-            self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+            self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.DOUBLEBUF)
 
         # After changing display mode, mixer might be uninitialized.
         # Re-initialize only if it's not already initialized.
@@ -618,9 +621,10 @@ class Game:
 
         if self.game_state == 'platformer':
             self.moving_platforms.update()
-            self.enemies.update(self.player, self.all_sprites, self.enemy_projectiles)
+            self.enemies.update(self.player, self.all_sprites, self.enemy_projectiles, self.platforms)
             self.enemy_projectiles.update(self.platforms)
             self.power_ups.update()
+            self.boss_gate_group.update()
         elif self.game_state == 'boss_fight':
             # Update boss and boss projectiles
             if self.boss:
@@ -689,13 +693,13 @@ class Game:
             for power_up in hit_power_ups:
                 self.player.activate_power_up(power_up.power_up_type)
 
-            if pygame.sprite.spritecollide(self.player, self.enemies, False): 
+            if pygame.sprite.spritecollide(self.player, self.enemies, False, collide_hitbox): 
                 self.player.take_damage(10)
             if pygame.sprite.spritecollide(self.player, self.enemy_projectiles, True): 
                 self.player.take_damage(15)
 
             for proj in self.projectiles:
-                hit_enemies = pygame.sprite.spritecollide(proj, self.enemies, False)
+                hit_enemies = pygame.sprite.spritecollide(proj, self.enemies, False, lambda proj, enemy: proj.rect.colliderect(enemy.hitbox))
                 if hit_enemies:
                     proj.kill()
                     for enemy in hit_enemies:
@@ -740,11 +744,6 @@ class Game:
             # Boss has died, but we need to wait for falling/explosion animation
             # The boss's update method will handle the transition to 'victory' after explosion
             pass # No direct game_state change here, handled by boss.update()
-
-        # Ensure music keeps playing if in a gameplay state
-        if self.game_state == 'platformer' and not pygame.mixer.music.get_busy():
-            pygame.mixer.music.load(LEVEL_MUSIC)
-            pygame.mixer.music.play(-1)
 
     def update_camera(self):
         # Simple camera that keeps the player in the middle of the screen
@@ -838,6 +837,7 @@ class Game:
             self.fullscreen_button.draw(self.screen, mouse_pos)
             self.back_button.draw(self.screen, mouse_pos)
         elif self.game_state == 'level_selection':
+            self.screen.blit(self.menu_bg_image, (0, 0))
             self.draw_text("Select Level", 40, SCREEN_WIDTH/2, 80, GOLD)
             self.draw_text(f"Total Coins: {self.total_coins}", 20, SCREEN_WIDTH/2, 140, GOLD)
 
@@ -931,21 +931,8 @@ class Game:
                     self.draw_text(f"Refunded {500 // 2} coins", 20, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 220, YELLOW)
                 else:
                     self.draw_text("New Gun Unlocked!", 40, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 180, GREEN)
-        elif self.game_state == 'settings': # NEW BLOCK
-            self.draw_text("Settings", 40, SCREEN_WIDTH / 2, 80, GOLD)
-
-            # Volume controls
-            self.draw_text(f"Volume: {int(self.volume * 100)}%", 25, SCREEN_WIDTH / 2, 225)
-            self.volume_down_button.draw(self.screen, mouse_pos)
-            self.volume_up_button.draw(self.screen, mouse_pos)
-
-            # Fullscreen toggle
-            self.fullscreen_button.draw(self.screen, mouse_pos)
-            self.draw_text(f"Fullscreen: {'On' if self.fullscreen else 'Off'}", 25, SCREEN_WIDTH / 2, 375)
-
-            self.back_button.draw(self.screen, mouse_pos) # Back button
-
-        elif self.game_state in ['platformer', 'boss_fight', 'victory', 'game_over']:
+        
+        elif self.game_state in ['platformer', 'boss_fight', 'victory', 'game_over', 'settings_ingame']:
             # All sprites should be drawn with camera offset, including boss and its explosion
             for sprite in self.all_sprites: 
                 # For explosion, we want it to be centered on the boss
@@ -987,6 +974,21 @@ class Game:
             self.settings_button_ingame.draw(self.screen, pygame.mouse.get_pos())
             self.main_menu_button.draw(self.screen, pygame.mouse.get_pos())
             self.exit_button_ingame.draw(self.screen, pygame.mouse.get_pos())
+        
+        if self.game_state == 'settings_ingame':
+            overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 128))
+            self.screen.blit(overlay, (0, 0))
+            self.draw_text("Settings", 60, SCREEN_WIDTH/2, 100, GOLD)
+            
+            self.draw_text(f"Volume: {int(self.volume * 100)}%", 40, SCREEN_WIDTH/2, 225, WHITE)
+            self.volume_down_button.draw(self.screen, mouse_pos)
+            self.volume_up_button.draw(self.screen, mouse_pos)
+            
+            # Update text based on state
+            self.fullscreen_button.text = "Mode: Fullscreen" if self.fullscreen else "Mode: Windowed"
+            self.fullscreen_button.draw(self.screen, mouse_pos)
+            self.back_button.draw(self.screen, mouse_pos)
 
         pygame.display.flip()
 
@@ -1002,12 +1004,11 @@ class Game:
         self.draw_text(f"Health: {self.player.health}", 18, 120, 32) # Keep health bar info roughly where it is
         
         # Coins
-        # self.draw_text(f"Level Coins: {self.player.coins_collected_in_level}", 20, 10, 60, GOLD, align="topleft")
-        self.draw_text(f"{self.total_coins}", 20, SCREEN_WIDTH - 100, 20, GOLD, align="topright")
+        self.draw_text(f"Total Coins: {self.total_coins}", 20, 10, 90, GOLD, align="topleft")
         
         # Current Weapon
         current_weapon_name = self.player.unlocked_weapons[self.player.current_weapon_index].replace('_', ' ').title()
-        self.draw_text(f"{current_weapon_name}", 20, SCREEN_WIDTH - 100, 50, WHITE, align="topright")
+        self.draw_text(f"Weapon: {current_weapon_name}", 20, 10, 120, WHITE, align="topleft")
 
         # Ultimate Meter
         if self.player.ultimate_ready:
