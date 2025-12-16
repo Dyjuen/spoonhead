@@ -28,12 +28,11 @@ class SpriteSheet:
         return frames
 
 class Player(pygame.sprite.Sprite):
-    """Player character with a reliable c    def __init__(self, x, y, game, upgrades=None, character_id=None, equipped_gun_id=None):
+    def __init__(self, x, y, game, upgrades=None, character_id=None, equipped_gun_id=None):
         super().__init__()
         from settings import CHARACTER_DATA
         from gun_data import GUN_DATA
         self.game = game
-TA
         self.upgrades = upgrades if upgrades else {}
         self.character_id = character_id or 'cyborg'
         self.character_data = CHARACTER_DATA[self.character_id]
@@ -45,7 +44,6 @@ TA
         self.buff_timer = 0
 
         # Layered rendering
-        self.
         self.gun_animations = {} # Not used for now, as guns are single image
         self.hand_animations = {}
         self.emote_animations = {}
@@ -61,6 +59,7 @@ TA
         self.last_frame_update = pygame.time.get_ticks()
         self.idle_timer = 0
         self.is_emoting = False
+        self.is_emote_playing = False # New line
         self.emote_cooldown = random.randint(5000, 10000)
 
         # Composite image
@@ -178,6 +177,7 @@ TA
             self.double_jump_unlocked = True
 
     def switch_weapon(self):
+        if self.is_emote_playing: return
         self.current_weapon_index = (self.current_weapon_index + 1) % len(self.unlocked_weapons)
         print(f"Switched to: {self.unlocked_weapons[self.current_weapon_index]}") # For debugging
 
@@ -207,17 +207,38 @@ TA
         # Load hand animations for each action
         self.hand_animations = {}
         if 'hand_animations' in self.character_data:
-            for anim_type, hand_path in self.character_data['hand_animations'].items():
-                try:
-                    img = pygame.image.load(hand_path).con
-                    # Match length to body anim if possible, else use a list of 1 for single images
-                    target_length = len(self.body_animations.get(anim_type, [None])) if anim_type in self.body_animations else 1
-                    self.hand_animations[anim_type] = [scaled_hand] * target_length
-                except (pygame.error, FileNotFoundError):
-                    print(f"Warning: Could not load player hand animation: {hand_path}")
-                    placeholder_frame = pygame.Surface(hand_size, pygame.SRCALPHA)
-                    target_length = len(self.body_animations.get(anim_type, [None])) if anim_type in self.body_animations else 1
-                    self.hand_animations[anim_type] = [placeholder_frame] * target_length
+            for anim_type, hand_path_val in self.character_data['hand_animations'].items():
+                loaded_frames = []
+                if isinstance(hand_path_val, list):
+                    for path in hand_path_val:
+                        try:
+                            img = pygame.image.load(path).convert_alpha()
+                            scaled_img = pygame.transform.scale(img, hand_size)
+                            loaded_frames.append(scaled_img)
+                        except (pygame.error, FileNotFoundError):
+                            print(f"Warning: Could not load player hand animation frame: {path}")
+                            loaded_frames.append(pygame.Surface(hand_size, pygame.SRCALPHA)) # Placeholder
+                else: # Assume it's a single string path
+                    try:
+                        img = pygame.image.load(hand_path_val).convert_alpha()
+                        scaled_img = pygame.transform.scale(img, hand_size)
+                        loaded_frames.append(scaled_img)
+                    except (pygame.error, FileNotFoundError):
+                        print(f"Warning: Could not load player hand animation: {hand_path_val}")
+                        loaded_frames.append(pygame.Surface(hand_size, pygame.SRCALPHA)) # Placeholder
+                
+                # Match length to body anim if possible, else use a list of 1 for single images
+                target_length = len(self.body_animations.get(anim_type, [None])) if anim_type in self.body_animations else 1
+                
+                # If loaded_frames is empty (e.g., all paths failed to load)
+                if not loaded_frames:
+                    loaded_frames.append(pygame.Surface(hand_size, pygame.SRCALPHA)) # Ensure at least one placeholder
+
+                # If only one frame is loaded but target_length > 1, repeat the frame
+                if len(loaded_frames) == 1 and target_length > 1:
+                    self.hand_animations[anim_type] = loaded_frames * target_length
+                else:
+                    self.hand_animations[anim_type] = loaded_frames
         
         # Ensure all body animation actions have a corresponding hand animation, even if placeholder
         for anim_type, body_frames in self.body_animations.items():
@@ -258,72 +279,71 @@ TA
     def animate(self):
         now = pygame.time.get_ticks()
         
-        # Determine current body animation
+        # Emote animation logic
         is_emote_action = self.action.startswith('emote')
-        if is_emote_action and self.is_emoting:
-             # Simple timer for single-frame emotes
-            if now - self.last_frame_update > 1000: # Show emote for 1 second
-                self.is_emoting = False
-                self.set_action('idle')
-        elif self.action == 'double_jump' and self.frame_index >= len(self.body_animations['double_jump']) - 1:
-            self.set_action('jump')
+        if is_emote_action:
+            self.is_emote_playing = True # Emote is active
+
+            current_emote_animation = self.emote_animations.get(self.action, [pygame.Surface((60, 60), pygame.SRCALPHA)]) # Fallback
+            
+            if now - self.last_frame_update > 150: # Emote animation speed
+                self.last_frame_update = now
+                self.frame_index = (self.frame_index + 1)
+                if self.frame_index >= len(current_emote_animation):
+                    self.frame_index = 0 # Loop the animation
+                    # If this was a single-play emote, we would set is_emote_playing to False here after one full cycle
+                    # For now, let's assume emotes loop until movement is detected or a timer runs out.
+            
+            body_frame = current_emote_animation[self.frame_index]
+            # Hand animation for emote
+            hand_frames_list = self.hand_animations.get(self.action, self.hand_animations['idle'])
+            hand_frame = hand_frames_list[self.frame_index % len(hand_frames_list)]
+            
+        else: # Regular animation logic
+            self.is_emote_playing = False # No emote is active
+            
+            if self.action == 'double_jump' and self.frame_index >= len(self.body_animations['double_jump']) - 1:
+                self.set_action('jump')
+            
+            current_body_animation = self.body_animations.get(self.action)
+            if not current_body_animation:
+                current_body_animation = self.body_animations['idle'] # Fallback
+            
+            if now - self.last_frame_update > 100:
+                self.last_frame_update = now
+                self.frame_index = (self.frame_index + 1) % len(current_body_animation)
+            
+            body_frame = current_body_animation[self.frame_index]
+            hand_frames_list = self.hand_animations.get(self.action, self.hand_animations['idle'])
+            hand_frame = hand_frames_list[self.frame_index % len(hand_frames_list)]
         
-        # Get animation list, default to idle if action not found
-        current_body_animation = self.body_animations.get(self.action)
-        if not current_body_animation: # If current action is an emote, use emote animation
-            current_body_animation = self.emote_animations.get(self.action, self.body_animations['idle'])
-
-        if now - self.last_frame_update > 100:
-            self.last_frame_update = now
-            self.frame_index = (self.frame_index + 1) % len(current_body_animation)
-        
-        # Get current frames for body, gun, hand
-        body_frame = current_body_animation[self.frame_index]
-        
-        # Get hand frame - prioritize specific hand anims for action, else fallback to idle hand
-        hand_animation_key = self.action
-        hand_frames_list = self.hand_animations.get(hand_animation_key, self.hand_animations['idle'])
-        hand_frame = hand_frames_list[self.frame_index % len(hand_frames_list)] # Ensure frame_index is within bounds for hand anim
-
-        # Resize hand for jump/double_jump actions
-        if self.action in ('jump', 'double_jump'):
-            # Make the hand larger for jump/double_jump
-            hand_frame = pygame.transform.scale(hand_frame, (70, 70))
-        else:
-            hand_frame = pygame.transform.scale(hand_frame, (60, 60))
-
-        gun_image = self.gun_image
-
+        # Handle flipping and composite image creation (common to both emote and regular animations)
         if not self.facing_right:
             body_frame = pygame.transform.flip(body_frame, True, False)
             hand_frame = pygame.transform.flip(hand_frame, True, False)
-            if gun_image: # Only flip if gun image exists
-                gun_image = pygame.transform.flip(gun_image, True, False)
-        
-        # Create a new composite image, assuming player_size (60,60) for the main sprite
-        composite_image = pygame.Surface((60, 60), pygame.SRCALPHA)
-        
-        # These offsets are placeholders and will need to be fine-tuned for each frame/animation
-        # For now, let's try to center the hand on the character, and the gun relative to the hand
-        body_rect = body_frame.get_rect()
-        hand_rect = hand_frame.get_rect()
-        gun_rect = gun_image.get_rect() if gun_image else None
+            if self.gun_image:
+                self.gun_image = pygame.transform.flip(self.gun_image, True, False) # Flip gun here
 
+        # Create a new composite image
+        composite_image = pygame.Surface((60, 60), pygame.SRCALPHA)
         # Position hand relative to body
-        # These values will need extensive tuning
-        hand_offset_x = 20
-        hand_offset_y = 30
+        current_hand_offset_x = 20
+        current_hand_offset_y = 30
         
+        # Adjust offsets for jump/double_jump
+        if self.action in ('jump', 'double_jump'):
+            current_hand_offset_x = 10 # Example adjustment
+            current_hand_offset_y = 15 # Example adjustment
+
         # Position gun relative to hand
-        # These values will need extensive tuning
         gun_offset_x = 0
         gun_offset_y = 0
 
         # Blit in order: body -> gun -> hand
         composite_image.blit(body_frame, (0, 0))
-        if gun_image:
-            composite_image.blit(gun_image, (hand_offset_x + gun_offset_x, hand_offset_y + gun_offset_y))
-        composite_image.blit(hand_frame, (hand_offset_x, hand_offset_y))
+        if self.gun_image:
+            composite_image.blit(self.gun_image, (current_hand_offset_x + gun_offset_x, current_hand_offset_y + gun_offset_y))
+        composite_image.blit(hand_frame, (current_hand_offset_x, current_hand_offset_y))
 
         self.image = composite_image
         self.rect = self.image.get_rect(center=self.rect.center)
@@ -333,38 +353,48 @@ TA
             self.action = new_action
             self.frame_index = 0
             self.last_frame_update = pygame.time.get_ticks() # Reset timer on action change
+            if self.action.startswith('emote'):
+                self.is_emoting = True # Keep this for idle timer logic
+            else:
+                self.is_emoting = False # Reset this if not emoting
 
     def update(self, move_input, platforms):
         sfx_events = []
         now = pygame.time.get_ticks()
 
         # Emote logic
-        if self.action == 'idle' and not self.is_emoting:
+        if self.action == 'idle' and not self.is_emoting and self.on_ground and move_input is None: # Only trigger emotes when truly idle
             self.idle_timer += self.game.clock.get_time() # Use game clock for framerate independence
             if self.idle_timer > self.emote_cooldown and self.emote_animations:
                 self.is_emoting = True
                 self.set_action(random.choice(list(self.emote_animations.keys())))
                 self.idle_timer = 0
                 self.emote_cooldown = random.randint(5000, 10000) # Reset cooldown
-        elif self.action != 'idle':
+        elif self.action != 'idle' or not self.on_ground or (move_input is not None and (move_input < 0.4 or move_input > 0.6)): # If not idle or moving/jumping
             self.idle_timer = 0
-            if not self.action.startswith('emote'):
-                self.is_emoting = False
+            if self.is_emote_playing: # If an emote was playing, stop it
+                self.set_action('idle')
+                self.is_emoting = False # Also reset is_emoting
+            elif not self.action.startswith('emote'): # If not an emote and not idle
+                self.is_emoting = False # Reset this if not emoting
 
-        if not self.is_emoting:
+        if self.is_emote_playing:
+            self.vx = 0 # No horizontal movement during emote
+            # No action change based on movement during emote
+        else: # Only process movement and action changes if not emoting
             if not self.on_ground:
                 if self.vy > 0 and self.action != 'double_jump': self.set_action('jump') # Falling
             elif move_input is not None and (move_input < 0.4 or move_input > 0.6): self.set_action('run')
             else: self.set_action('idle')
 
-        self.vx = 0
-        if move_input is not None and not self.is_emoting:
-            if self.dashing:
-                if pygame.time.get_ticks() - self.dash_timer > self.dash_duration: self.dashing = False
-                self.vx = self.dash_speed * (1 if self.facing_right else -1)
-            else:
-                if move_input < 0.4: self.vx = -self.speed; self.facing_right = False
-                elif move_input > 0.6: self.vx = self.speed; self.facing_right = True
+            self.vx = 0
+            if move_input is not None:
+                if self.dashing:
+                    if pygame.time.get_ticks() - self.dash_timer > self.dash_duration: self.dashing = False
+                    self.vx = self.dash_speed * (1 if self.facing_right else -1)
+                else:
+                    if move_input < 0.4: self.vx = -self.speed; self.facing_right = False
+                    elif move_input > 0.6: self.vx = self.speed; self.facing_right = True
         
         self.hitbox.x += self.vx
         for platform in platforms:
@@ -424,6 +454,7 @@ TA
         return sfx_events
 
     def jump(self):
+        if self.is_emote_playing: return None
         max_jumps = 2 if self.double_jump_unlocked else 1
         if self.jumps_made < max_jumps and not self.is_emoting:
             self.vy = self.jump_power
@@ -436,11 +467,13 @@ TA
         return None
 
     def dash(self):
+        if self.is_emote_playing: return
         current_time = pygame.time.get_ticks()
         if not self.dashing and current_time - self.last_dash > self.dash_cooldown and not self.is_emoting:
             self.dashing = True; self.dash_timer = current_time; self.last_dash = current_time
 
     def shoot(self, shoot_direction='horizontal'):
+        if self.is_emote_playing: return None, None
         current_time = pygame.time.get_ticks()
         if current_time - self.last_shot > self.shoot_cooldown and not self.is_emoting:
             self.last_shot = current_time
@@ -525,6 +558,7 @@ TA
             self.apply_buff()
 
     def activate_ultimate(self):
+        if self.is_emote_playing: return None
         if self.ultimate_ready:
             self.ultimate_meter = 0
             self.ultimate_ready = False
@@ -850,58 +884,6 @@ class Boss(pygame.sprite.Sprite):
             self.game.all_sprites.add(proj); self.game.boss_projectiles.add(proj)
 
     def shoot_pattern_3(self):
-        for i in range(2):
-            angle = (self.pattern_counter*15 + i*180)%360
-            proj = BossProjectile(self.rect.centerx, self.rect.centery, math.cos(math.radians(angle))*5, math.sin(math.radians(angle))*5)
-            self.game.all_sprites.add(proj); self.game.boss_projectiles.add(proj)
-        self.pattern_counter+=1
-
-    def take_damage(self, amount):
-        if self.is_flashing: return # Prevent taking damage while flashing (invincibility frames)
-        self.health -= amount
-        if self.health <= 0:
-            self.health = 0
-            self.kill()
-            return
-        self.is_flashing = True
-        self.flash_timer = pygame.time.get_ticks()
-        # No image change here, handled in update()
-set_x + gun_offset_x, hand_offset_y + gun_offset_y))
-        composite_image.blit(hand_frame, (hand_offset_x, hand_offset_y))
-
-        self.image = composite_image
-        self.rect = self.image.get_rect(center=self.rect.center) # Keep original centerern_3(self):
-        for i in range(2):
-            angle = (self.pattern_counter*15 + i*180)%360
-            proj = BossProjectile(self.rect.centerx, self.rect.centery, math.cos(math.radians(angle))*5, math.sin(math.radians(angle))*5)
-            self.game.all_sprites.add(proj); self.game.boss_projectiles.add(proj)
-        self.pattern_counter+=1
-
-    def take_damage(self, amount):
-        if self.is_flashing: return # Prevent taking damage while flashing (invincibility frames)
-        self.health -= amount
-        if self.health <= 0:
-            self.health = 0
-            self.kill()
-            return
-        self.is_flashing = True
-        self.flash_timer = pygame.time.get_ticks()
-        # No image change here, handled in update()
-(self.pattern_counter*15 + i*180)%360
-            proj = BossProjectile(self.rect.centerx, self.rect.centery, math.cos(math.radians(angle))*5, math.sin(math.radians(angle))*5)
-            self.game.all_sprites.add(proj); self.game.boss_projectiles.add(proj)
-        self.pattern_counter+=1
-
-    def take_damage(self, amount):
-        if self.is_flashing: return # Prevent taking damage while flashing (invincibility frames)
-        self.health -= amount
-        if self.health <= 0:
-            self.health = 0
-            self.kill()
-            return
-        self.is_flashing = True
-        self.flash_timer = pygame.time.get_ticks()
-        # No image change here, handled in update()ttern_3(self):
         for i in range(2):
             angle = (self.pattern_counter*15 + i*180)%360
             proj = BossProjectile(self.rect.centerx, self.rect.centery, math.cos(math.radians(angle))*5, math.sin(math.radians(angle))*5)
