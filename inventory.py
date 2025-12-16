@@ -12,7 +12,7 @@ TIER_COLORS = {
 }
 
 class InventoryScreen:
-    def __init__(self, screen, selected_character_id, unlocked_guns, gun_data, character_data, equipped_gun_id):
+    def __init__(self, screen, selected_character_id, unlocked_guns, gun_data, character_data, equipped_gun_id, unlocked_characters):
         self.screen = screen
         self.selected_character_id = selected_character_id
         self.unlocked_guns = unlocked_guns
@@ -27,8 +27,7 @@ class InventoryScreen:
         self.back_button = Button(20, 20, 150, 50, "Back", RED, PURPLE)
 
         # Unlocked characters should be passed from Game, not hardcoded here
-        # For now, it's hardcoded to allow selection in dev
-        self.unlocked_characters = ['cyborg', 'biker', 'punk']  
+        self.unlocked_characters = unlocked_characters # Now a parameter
         
         # Load images
         self.character_animations = self._load_character_animations()
@@ -88,10 +87,11 @@ class InventoryScreen:
         pygame.draw.circle(icon, BLACK, (15, 28), 5)
         return icon
 
-    def update_data(self, selected_character_id, unlocked_guns, equipped_gun_id):
+    def update_data(self, selected_character_id, unlocked_guns, equipped_gun_id, unlocked_characters):
         self.selected_character_id = selected_character_id
         self.unlocked_guns = unlocked_guns
         self.equipped_gun_id = equipped_gun_id
+        self.unlocked_characters = unlocked_characters # Update unlocked characters
 
     def draw(self):
         self.screen.fill(DARK_GRAY)
