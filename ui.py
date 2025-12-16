@@ -3,13 +3,13 @@ from settings import PIXEL_FONT
 
 class Button:
     """Simple button class"""
-    def __init__(self, x, y, width, height, text, color, hover_color, text_color=pygame.Color('white')):
+    def __init__(self, x, y, width, height, text, color, hover_color, text_color=pygame.Color('white'), font_size=20):
         self.rect = pygame.Rect(x, y, width, height)
         self.text = text
         self.color = color
         self.hover_color = hover_color
         self.text_color = text_color
-        self.font = pygame.font.Font(PIXEL_FONT, 20)
+        self.font = pygame.font.Font(PIXEL_FONT, font_size)
 
     def draw(self, screen, mouse_pos):
         is_hovered = self.rect.collidepoint(mouse_pos)

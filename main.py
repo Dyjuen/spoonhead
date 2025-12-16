@@ -170,13 +170,13 @@ class Game:
             self.sfx = {}
             self.death_sound = None
         self.start_button = Button(SCREEN_WIDTH/2 - 100, SCREEN_HEIGHT/2 - 50, 200, 50, "Start Game", BLUE, PURPLE)
-        self.quit_button = Button(SCREEN_WIDTH/2 - 100, SCREEN_HEIGHT/2 + 20, 200, 50, "Quit Game", RED, PURPLE)
-        self.settings_button = Button(SCREEN_WIDTH/2 - 100, SCREEN_HEIGHT/2 + 90, 200, 50, "Settings", GRAY, PURPLE)
+        self.settings_button = Button(SCREEN_WIDTH/2 - 100, SCREEN_HEIGHT/2 + 20, 200, 50, "Settings", GRAY, PURPLE)
+        self.quit_button = Button(SCREEN_WIDTH/2 - 100, SCREEN_HEIGHT/2 + 90, 200, 50, "Quit Game", RED, PURPLE)
         
         self.level_cards = []
 
-        self.shop_button = Button(SCREEN_WIDTH - 170, 20, 150, 50, "Shop", GOLD, PURPLE)
-        self.inventory_button = Button(SCREEN_WIDTH - 170, 90, 150, 50, "Inventory", GOLD, PURPLE)
+        self.shop_button = Button(SCREEN_WIDTH - 170, 20, 150, 50, "Shop", GOLD, PURPLE, font_size=16)
+        self.inventory_button = Button(SCREEN_WIDTH - 170, 90, 150, 50, "Inventory", GOLD, PURPLE, font_size=16)
         self.back_button = Button(20, 20, 150, 50, "Back", RED, PURPLE)
 
         # Settings screen buttons
@@ -750,7 +750,7 @@ class Game:
                 pygame.draw.rect(self.screen, (50, 50, 50), thumb_rect)
                 self.draw_text(str(level_num), 50, thumb_rect.centerx, thumb_rect.centery, border_color)
 
-                self.draw_text(level_data['name'], 18, card_rect.centerx, card_rect.y + 180, WHITE)
+                self.draw_text(level_data['name'], 14, card_rect.centerx, card_rect.y + 180, WHITE)
 
                 if not is_unlocked:
                     lock_overlay = pygame.Surface((card_width, card_height), pygame.SRCALPHA)
