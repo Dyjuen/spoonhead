@@ -61,8 +61,8 @@ CHARACTER_DATA = {
 		'default': False,
 		'idle': "assets/Character/1 Biker/Idle1.png",
 		'run': "assets/Character/1 Biker/Run1.png",
-		'jump': ["assets/Character/Hands/1 Biker/4.png", "assets/Character/Hands/1 Biker/5.png"],
-		'double_jump': ["assets/Character/Hands/1 Biker/4.png", "assets/Character/Hands/1 Biker/5.png"],
+		'jump': "assets/Character/1 Biker/Jump1.png",
+		'double_jump': "assets/Character/1 Biker/Jump2.png",
 		'death': "assets/Character/1 Biker/Death.png",
 		'buff': 'speed_boost',  # Example: faster run speed
 		'buff_desc': 'Increased movement speed',
@@ -88,8 +88,8 @@ CHARACTER_DATA = {
 		'default': False,
 		'idle': "assets/Character/2 Punk/Idle1.png",
 		'run': "assets/Character/2 Punk/Run1.png",
-		'jump': ["assets/Character/Hands/2 Punk/4.png", "assets/Character/Hands/2 Punk/5.png"],
-		'double_jump': ["assets/Character/Hands/2 Punk/4.png", "assets/Character/Hands/2 Punk/5.png"],
+		'jump': "assets/Character/2 Punk/Jump1.png",
+		'double_jump': "assets/Character/2 Punk/Jump2.png",
 		'death': "assets/Character/2 Punk/Death.png",
 		'buff': 'jump_boost',  # Example: higher jump
 		'buff_desc': 'Higher jump height',

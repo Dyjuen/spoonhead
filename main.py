@@ -173,9 +173,9 @@ class Game:
         self.back_button = Button(20, 20, 150, 50, "Back", RED, PURPLE)
 
         # Settings screen buttons
-        self.volume_down_button = Button(SCREEN_WIDTH/2 - 150, 200, 50, 50, "-", RED, PURPLE)
-        self.volume_up_button = Button(SCREEN_WIDTH/2 + 100, 200, 50, 50, "+", GREEN, PURPLE)
-        self.fullscreen_button = Button(SCREEN_WIDTH/2 - 150, 300, 300, 50, "Toggle Fullscreen", BLUE, PURPLE)
+        self.volume_down_button = Button(SCREEN_WIDTH/2 - 150, 275, 50, 50, "-", RED, PURPLE)
+        self.volume_up_button = Button(SCREEN_WIDTH/2 + 100, 275, 50, 50, "+", GREEN, PURPLE)
+        self.fullscreen_button = Button(SCREEN_WIDTH/2 - 150, 350, 300, 50, "Toggle Fullscreen", BLUE, PURPLE)
 
         # Pause menu buttons
         self.resume_button = Button(SCREEN_WIDTH/2 - 100, SCREEN_HEIGHT/2 - 50, 200, 50, "Resume", BLUE, PURPLE)
@@ -649,6 +649,17 @@ class Game:
             self.start_button.draw(self.screen, mouse_pos)
             self.settings_button.draw(self.screen, mouse_pos)
             self.quit_button.draw(self.screen, mouse_pos)
+        elif self.game_state == 'settings':
+            self.draw_text("Settings", 60, SCREEN_WIDTH/2, 100, GOLD)
+            
+            self.draw_text(f"Volume: {int(self.volume * 100)}%", 40, SCREEN_WIDTH/2, 225, WHITE)
+            self.volume_down_button.draw(self.screen, mouse_pos)
+            self.volume_up_button.draw(self.screen, mouse_pos)
+            
+            # Update text based on state
+            self.fullscreen_button.text = "Mode: Fullscreen" if self.fullscreen else "Mode: Windowed"
+            self.fullscreen_button.draw(self.screen, mouse_pos)
+            self.back_button.draw(self.screen, mouse_pos)
         elif self.game_state == 'level_selection':
             self.draw_text("Select Level", 40, SCREEN_WIDTH/2, 80, GOLD)
             self.draw_text(f"Total Coins: {self.total_coins}", 20, SCREEN_WIDTH/2, 140, GOLD)
