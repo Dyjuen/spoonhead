@@ -479,12 +479,14 @@ class Game:
             self.moving_platforms.update()
             self.enemies.update(self.player, self.all_sprites, self.enemy_projectiles)
             self.enemy_projectiles.update()
+            pygame.sprite.groupcollide(self.enemy_projectiles, self.platforms, True, False)
             self.power_ups.update()
         elif self.game_state == 'boss_fight':
             # Update boss and boss projectiles
             if self.boss:
                 self.boss.update()
             self.boss_projectiles.update()
+            pygame.sprite.groupcollide(self.boss_projectiles, self.platforms, True, False)
         elif self.game_state == 'gacha_animation': # Gacha animation handles its own state transition
             if pygame.time.get_ticks() - self.gacha_animation_timer > 3000: # 3 seconds
                 self.game_state = 'shop_screen'
