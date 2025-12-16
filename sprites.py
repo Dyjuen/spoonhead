@@ -4,6 +4,7 @@ import os
 import math
 import time
 from settings import *
+from level_data import ALL_LEVELS
 
 class SpriteSheet:
     """Utility for loading and parsing sprite sheets."""
@@ -1104,8 +1105,16 @@ class Boss(pygame.sprite.Sprite):
             # Check if explosion animation has finished playing
             if self.frame_index >= len(self.animations['explosion']) - 1:
                 self.kill()
-                self.game.game_state = 'victory' # Transition to victory after explosion
-                self.game._play_sfx('victory') # Play victory sound
+                self.game.game_state = 'victory' 
+                
+                # Unlock next level logic
+                if self.game.current_level == self.game.unlocked_levels and self.game.unlocked_levels < len(ALL_LEVELS):
+                    self.game.unlocked_levels += 1
+                
+                self.game.total_coins += self.game.player.coins_collected_in_level
+                self.game.save_game_data()
+                
+                self.game._play_sfx('victory') 
             return # Stop other updates during explosion
         # If not dying, proceed with normal boss behavior
         # Simple horizontal movement for now

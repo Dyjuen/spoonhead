@@ -34,7 +34,7 @@ class ShopScreen:
         self.item_buttons = []
         self.scroll_y = 0
         self.setup_buttons()
-        self.buy_crate_button = Button(SCREEN_WIDTH - 320, 100, 300, 60, "Buy Gun Crate (500)", GOLD, DARK_PURPLE)
+        self.buy_crate_button = Button(SCREEN_WIDTH - 320, 100, 300, 60, "Buy Gun Crate (500)", GOLD, DARK_PURPLE, font_size=14)
 
     def setup_buttons(self):
         self.item_buttons = []
@@ -50,7 +50,7 @@ class ShopScreen:
             item_button = Button(x, y, SCREEN_WIDTH - 300, 120, "", DARK_GRAY, GRAY)
             
             # Buy button
-            buy_button = Button(x + item_button.rect.width - 120, y + 75, 100, 30, "Buy", GREEN, DARK_PURPLE)
+            buy_button = Button(x + item_button.rect.width - 120, y + 75, 100, 30, "Buy", GREEN, DARK_PURPLE, font_size=12)
 
             self.item_buttons.append({
                 'id': item_id,
@@ -89,7 +89,7 @@ class ShopScreen:
                 
                 # Display item name, description and level
                 self.draw_text(item_data['name'], 18, button.rect.x + 150, button.rect.y + 30,align='center')
-                self.draw_text(item_data['description'], 12, button.rect.x + 250, button.rect.y + 60,align='center')
+                self.draw_text(item_data['description'], 8, button.rect.x + 250, button.rect.y + 60,align='center')
                 if max_level > 1:
                     self.draw_text(f"Level: {current_level}/{max_level}", 12, button.rect.x + 150, button.rect.y + 90,align='center')
 
@@ -105,7 +105,7 @@ class ShopScreen:
                     buy_button.text = f"Buy ({price})"
                     buy_button.color = GREEN if can_afford else GRAY
                     buy_button.hover_color = ORANGE if can_afford else GRAY
-                    buy_button.font = pygame.font.Font(PIXEL_FONT, 16) # Set font size for buy button
+                    buy_button.font = pygame.font.Font(PIXEL_FONT, 12) # Set font size for buy button
                     
                     buy_button.draw(self.screen, mouse_pos)
         

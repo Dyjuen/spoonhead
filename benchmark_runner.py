@@ -196,10 +196,9 @@ class BenchmarkGame(Game):
     <div class="container">
         <header>
             <div>
-                <h1>🥄 SPOONHEAD BENCHMARK</h1>
+                <h1>SPOONHEAD BENCHMARK</h1>
                 <div class="subtitle">{time.strftime('%Y-%m-%d %H:%M:%S')} • Duration: {self.duration}s • Stress Test</div>
             </div>
-            <button class="btn-print" onclick="window.print()">🖨️ Print Report</button>
         </header>
 
         <div class="specs-box">

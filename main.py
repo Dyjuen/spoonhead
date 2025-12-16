@@ -1021,7 +1021,7 @@ class Game:
             self.handle_events()
             self.update_game_state()
             self.draw()
-            self.clock.tick(60)
+            self.clock.tick(0)
         pygame.quit()
 
 if __name__ == "__main__":
