@@ -28,7 +28,7 @@ class SpriteSheet:
         return frames
 
 class Player(pygame.sprite.Sprite):
-    def __init__(self, x, y, game, upgrades=None, character_id=None, equipped_gun_id=None):
+    def __init__(self, x, y, game, upgrades=None, character_id=None, equipped_gun_id=None, upgrades_data=None):
         super().__init__()
         from settings import CHARACTER_DATA
         from gun_data import GUN_DATA
@@ -42,6 +42,10 @@ class Player(pygame.sprite.Sprite):
         # Buff state
         self.buff_active = False
         self.buff_timer = 0
+
+        if upgrades_data is None:
+            upgrades_data = {}
+        self.upgrades_data = upgrades_data # Store for later if needed
 
         # Layered rendering
         self.gun_animations = {} # Not used for now, as guns are single image
@@ -62,6 +66,17 @@ class Player(pygame.sprite.Sprite):
         self.is_emote_playing = False # New line
         self.emote_cooldown = random.randint(5000, 10000)
 
+        # Emote & Double Jump Specifics
+        self.idle_timer_start = pygame.time.get_ticks()
+        self.idle_duration_threshold = random.randint(5000, 10000) # 5 to 10 seconds
+        self.current_emote_frames = []
+        self.current_emote_frame_index = 0
+        self.emote_start_time = 0
+        self.emote_animation_speed = 150 # milliseconds per frame
+
+        self.double_jump_enabled = False
+        self.jumps_left = 1 # Default
+
         # Composite image
         self.image = pygame.Surface((60, 60), pygame.SRCALPHA) # Will be overwritten by animate
         self.rect = self.image.get_rect(center=(x, y))
@@ -71,7 +86,7 @@ class Player(pygame.sprite.Sprite):
         self.hitbox.center = (self.rect.centerx - self.hitbox_offset_x, self.rect.centery)
         self.max_health = 100
         self.health = self.max_health 
-        self.coins = 0
+        self.coins_collected_in_level = 0 # Reintroduced for level-specific count
         self.vx = 0
         self.vy = 0
         # Buffs
@@ -81,6 +96,18 @@ class Player(pygame.sprite.Sprite):
             self.speed = 7
         if self.buff == 'jump_boost':
             self.jump_power = -20
+
+        # Apply upgrades after max_health is set
+        if self.upgrades_data.get("health_up", 0) > 0: # Check if level > 0
+            self.max_health = int(self.max_health * 1.5) # Example: 50% more health
+            self.health = self.max_health # Update current health to new max
+
+        if self.upgrades_data.get("double_jump", 0) > 0: # Check if level > 0
+            self.double_jump_enabled = True
+            self.jumps_left = 2 # Allow two jumps
+        else:
+            self.jumps_left = 1 # Default to single jump
+
         self.update_buff() # Initialize physics attributes
 
     def equip_gun(self, gun_id):
@@ -153,7 +180,6 @@ class Player(pygame.sprite.Sprite):
         self.shot_damage = 10
         self.unlocked_weapons = ['default']
         self.current_weapon_index = 0
-        self.double_jump_unlocked = False
         self.was_on_ground = False
         self.damage_boost_active = False
         self.damage_boost_timer = 0
@@ -173,8 +199,7 @@ class Player(pygame.sprite.Sprite):
         if self.upgrades.get('burst_shot', 0) > 0 and 'burst_shot' not in self.unlocked_weapons:
             self.unlocked_weapons.append('burst_shot')
 
-        if self.upgrades.get('double_jump', 0) > 0:
-            self.double_jump_unlocked = True
+
 
     def switch_weapon(self):
         if self.is_emote_playing: return
@@ -190,15 +215,27 @@ class Player(pygame.sprite.Sprite):
         for anim_type in ['idle', 'run', 'jump', 'double_jump']: # Only main actions have body animations
             sprite_path = self.character_data.get(anim_type)
             if sprite_path:
-                try:
-                    sheet = SpriteSheet(sprite_path)
-                    frames = sheet.get_animation_frames(48, 48)
-                    scaled_frames = [pygame.transform.scale(frame, player_size) for frame in frames]
-                    self.body_animations[anim_type] = scaled_frames
-                except (pygame.error, FileNotFoundError):
-                    print(f"Warning: Could not load player body animation: {sprite_path}")
-                    placeholder_frame = pygame.Surface(player_size, pygame.SRCALPHA); placeholder_frame.fill(BLUE)
-                    self.body_animations[anim_type] = [placeholder_frame] * 4
+                loaded_frames = []
+                if isinstance(sprite_path, list): # Handle list of image paths
+                    for path in sprite_path:
+                        try:
+                            img = pygame.image.load(path).convert_alpha()
+                            scaled_img = pygame.transform.scale(img, player_size)
+                            loaded_frames.append(scaled_img)
+                        except (pygame.error, FileNotFoundError):
+                            print(f"Warning: Could not load player body animation frame: {path}")
+                            loaded_frames.append(pygame.Surface(player_size, pygame.SRCALPHA)) # Placeholder
+                    self.body_animations[anim_type] = loaded_frames
+                else: # Handle single sprite sheet path
+                    try:
+                        sheet = SpriteSheet(sprite_path)
+                        frames = sheet.get_animation_frames(48, 48)
+                        scaled_frames = [pygame.transform.scale(frame, player_size) for frame in frames]
+                        self.body_animations[anim_type] = scaled_frames
+                    except (pygame.error, FileNotFoundError):
+                        print(f"Warning: Could not load player body animation: {sprite_path}")
+                        placeholder_frame = pygame.Surface(player_size, pygame.SRCALPHA); placeholder_frame.fill(BLUE)
+                        self.body_animations[anim_type] = [placeholder_frame] * 4
             else: # Fallback if action sprite path not defined
                 placeholder_frame = pygame.Surface(player_size, pygame.SRCALPHA); placeholder_frame.fill(BLUE)
                 self.body_animations[anim_type] = [placeholder_frame] * 4
@@ -249,59 +286,34 @@ class Player(pygame.sprite.Sprite):
         # Load emote animations
         self.emote_animations = {}
         if 'emotes' in self.character_data:
-            for i, emote_path in enumerate(self.character_data['emotes']):
+            for emote_path in self.character_data['emotes']:
+                emote_name = os.path.splitext(os.path.basename(emote_path))[0].lower() # Extract name from path
                 try:
                     img = pygame.image.load(emote_path).convert_alpha()
                     scaled_img = pygame.transform.scale(img, player_size)
-                    self.emote_animations[f'emote_{i}'] = [scaled_img] # Treat as single-frame animation
+                    self.emote_animations[emote_name] = [scaled_img] # Use name as key
                 except (pygame.error, FileNotFoundError):
                     print(f"Warning: Could not load emote animation: {emote_path}")
-        
-        # Load hand animations for emotes
-        if 'hand_animations' in self.character_data and 'emotes' in self.character_data:
-            for i, emote_path in enumerate(self.character_data['emotes']):
-                emote_key = f'emote_{i}'
-                # Try to find a matching hand animation for the emote
-                hand_emote_path = self.character_data['hand_animations'].get(emote_key)
-                if hand_emote_path:
-                    try:
-                        img = pygame.image.load(hand_emote_path).convert_alpha()
-                        scaled_hand = pygame.transform.scale(img, hand_size)
-                        self.hand_animations[emote_key] = [scaled_hand]
-                    except (pygame.error, FileNotFoundError):
-                        print(f"Warning: Could not load hand animation for emote: {hand_emote_path}")
-                        placeholder_frame = pygame.Surface(hand_size, pygame.SRCALPHA)
-                        self.hand_animations[emote_key] = [placeholder_frame]
-                else: # Fallback if no specific hand emote is defined
-                    placeholder_frame = pygame.Surface(hand_size, pygame.SRCALPHA)
-                    self.hand_animations[emote_key] = [placeholder_frame]
 
     def animate(self):
         now = pygame.time.get_ticks()
         
-        # Emote animation logic
-        is_emote_action = self.action.startswith('emote')
-        if is_emote_action:
-            self.is_emote_playing = True # Emote is active
+        body_frame = None
+        hand_frame = None
 
-            current_emote_animation = self.emote_animations.get(self.action, [pygame.Surface((60, 60), pygame.SRCALPHA)]) # Fallback
+        if self.is_emoting:
+            # Emote animation
+            # self.action holds the key for the current emote (e.g., 'emote_angry')
+            current_emote_animation = self.emote_animations.get(self.action, [pygame.Surface((60, 60), pygame.SRCALPHA)])
             
-            if now - self.last_frame_update > 150: # Emote animation speed
-                self.last_frame_update = now
-                self.frame_index = (self.frame_index + 1)
-                if self.frame_index >= len(current_emote_animation):
-                    self.frame_index = 0 # Loop the animation
-                    # If this was a single-play emote, we would set is_emote_playing to False here after one full cycle
-                    # For now, let's assume emotes loop until movement is detected or a timer runs out.
+            if now - self.emote_start_time > self.emote_animation_speed:
+                self.emote_start_time = now
+                self.current_emote_frame_index = (self.current_emote_frame_index + 1) % len(current_emote_animation)
             
-            body_frame = current_emote_animation[self.frame_index]
-            # Hand animation for emote
-            hand_frames_list = self.hand_animations.get(self.action, self.hand_animations['idle'])
-            hand_frame = hand_frames_list[self.frame_index % len(hand_frames_list)]
+            body_frame = current_emote_animation[self.current_emote_frame_index]
+            # No hand or gun when emoting, so hand_frame remains None
             
         else: # Regular animation logic
-            self.is_emote_playing = False # No emote is active
-            
             if self.action == 'double_jump' and self.frame_index >= len(self.body_animations['double_jump']) - 1:
                 self.set_action('jump')
             
@@ -317,33 +329,38 @@ class Player(pygame.sprite.Sprite):
             hand_frames_list = self.hand_animations.get(self.action, self.hand_animations['idle'])
             hand_frame = hand_frames_list[self.frame_index % len(hand_frames_list)]
         
-        # Handle flipping and composite image creation (common to both emote and regular animations)
+        # Handle flipping and composite image creation
         if not self.facing_right:
             body_frame = pygame.transform.flip(body_frame, True, False)
-            hand_frame = pygame.transform.flip(hand_frame, True, False)
-            if self.gun_image:
-                self.gun_image = pygame.transform.flip(self.gun_image, True, False) # Flip gun here
-
+            if hand_frame:
+                hand_frame = pygame.transform.flip(hand_frame, True, False)
+        
         # Create a new composite image
         composite_image = pygame.Surface((60, 60), pygame.SRCALPHA)
-        # Position hand relative to body
-        current_hand_offset_x = 20
-        current_hand_offset_y = 30
         
-        # Adjust offsets for jump/double_jump
-        if self.action in ('jump', 'double_jump'):
-            current_hand_offset_x = 10 # Example adjustment
-            current_hand_offset_y = 15 # Example adjustment
-
-        # Position gun relative to hand
-        gun_offset_x = 0
-        gun_offset_y = 0
-
-        # Blit in order: body -> gun -> hand
+        # Blit body frame
         composite_image.blit(body_frame, (0, 0))
-        if self.gun_image:
-            composite_image.blit(self.gun_image, (current_hand_offset_x + gun_offset_x, current_hand_offset_y + gun_offset_y))
-        composite_image.blit(hand_frame, (current_hand_offset_x, current_hand_offset_y))
+
+        if not self.is_emoting and self.action not in ('jump', 'double_jump'): # Only draw hand and gun if not emoting AND not jumping
+            # Position hand relative to body
+            current_hand_offset_x = 20
+            current_hand_offset_y = 30
+            
+            # Adjust offsets for jump/double_jump
+            if self.action in ('jump', 'double_jump'):
+                current_hand_offset_x = 10 # Example adjustment
+                current_hand_offset_y = 15 # Example adjustment
+
+            # Position gun relative to hand
+            gun_offset_x = 0
+            gun_offset_y = 0
+
+            # Blit gun and hand
+            if self.gun_image:
+                flipped_gun_image = pygame.transform.flip(self.gun_image, True, False) if not self.facing_right else self.gun_image
+                composite_image.blit(flipped_gun_image, (current_hand_offset_x + gun_offset_x, current_hand_offset_y + gun_offset_y))
+            if hand_frame:
+                composite_image.blit(hand_frame, (current_hand_offset_x, current_hand_offset_y))
 
         self.image = composite_image
         self.rect = self.image.get_rect(center=self.rect.center)
@@ -363,20 +380,33 @@ class Player(pygame.sprite.Sprite):
         now = pygame.time.get_ticks()
 
         # Emote logic
-        if self.action == 'idle' and not self.is_emoting and self.on_ground and move_input is None: # Only trigger emotes when truly idle
-            self.idle_timer += self.game.clock.get_time() # Use game clock for framerate independence
-            if self.idle_timer > self.emote_cooldown and self.emote_animations:
-                self.is_emoting = True
-                self.set_action(random.choice(list(self.emote_animations.keys())))
-                self.idle_timer = 0
-                self.emote_cooldown = random.randint(5000, 10000) # Reset cooldown
-        elif self.action != 'idle' or not self.on_ground or (move_input is not None and (move_input < 0.4 or move_input > 0.6)): # If not idle or moving/jumping
-            self.idle_timer = 0
-            if self.is_emote_playing: # If an emote was playing, stop it
-                self.set_action('idle')
-                self.is_emoting = False # Also reset is_emoting
-            elif not self.action.startswith('emote'): # If not an emote and not idle
-                self.is_emoting = False # Reset this if not emoting
+        if self.action == 'idle' and not self.is_emoting and self.on_ground and (move_input is None or (move_input >= 0.4 and move_input <= 0.6)): # Only trigger emotes when truly idle
+            if now - self.idle_timer_start > self.idle_duration_threshold:
+                if self.emote_animations:
+                    self.is_emoting = True
+                    # Randomly select an emote from the dictionary keys
+                    selected_emote_key = random.choice(list(self.emote_animations.keys()))
+                    self.set_action(selected_emote_key)
+                    self.current_emote_frames = self.emote_animations[selected_emote_key]
+                    self.current_emote_frame_index = 0
+                    self.emote_start_time = now
+                    # Reset idle timer for next potential emote
+                    self.idle_timer_start = now
+                    self.idle_duration_threshold = random.randint(5000, 10000)
+        # If player moves, jumps, or shoots, stop emoting
+        elif self.is_emoting and (
+            (move_input is not None and (move_input < 0.4 or move_input > 0.6)) # Movement
+            or self.vy < 0 # Jumping
+            or (hasattr(self.game, 'shooting') and self.game.shooting and pygame.time.get_ticks() - self.last_shot < self.shoot_cooldown) # Shooting
+        ):
+            self.is_emoting = False
+            self.set_action('idle') # Return to idle animation
+            self.idle_timer_start = now # Reset timer
+            self.idle_duration_threshold = random.randint(5000, 10000)
+        # Reset idle timer if not idle or emoting has stopped naturally
+        if not self.is_emoting and (self.action != 'idle' or not self.on_ground or (move_input is not None and (move_input < 0.4 or move_input > 0.6))):
+            self.idle_timer_start = now
+            self.idle_duration_threshold = random.randint(5000, 10000)
 
         if self.is_emote_playing:
             self.vx = 0 # No horizontal movement during emote
@@ -418,7 +448,8 @@ class Player(pygame.sprite.Sprite):
                     self.hitbox.bottom = platform.rect.top
                     self.vy = 0
                     self.on_ground = True
-                    self.jumps_made = 0
+                    # Reset jumps_left when landing
+                    self.jumps_left = 2 if self.double_jump_enabled else 1
                     # Cek apakah platform adalah MovingPlatform
                     if hasattr(platform, 'direction') and hasattr(platform, 'speed') and hasattr(platform, 'move_axis'):
                         self.standing_on_moving = platform
@@ -455,14 +486,18 @@ class Player(pygame.sprite.Sprite):
 
     def jump(self):
         if self.is_emote_playing: return None
-        max_jumps = 2 if self.double_jump_unlocked else 1
-        if self.jumps_made < max_jumps and not self.is_emoting:
+        if self.jumps_left > 0 and not self.is_emoting:
             self.vy = self.jump_power
             self.on_ground = False
-            self.set_action('double_jump' if self.jumps_made == 1 else 'jump')
-            self.jumps_made += 1
+            if self.double_jump_enabled and self.jumps_left == 2: # First jump
+                self.set_action('jump')
+            elif self.double_jump_enabled and self.jumps_left == 1: # Second jump
+                self.set_action('double_jump')
+            elif not self.double_jump_enabled and self.jumps_left == 1: # Single jump
+                self.set_action('jump')
+            self.jumps_left -= 1
             return 'jump'
-        elif not self.double_jump_unlocked and self.jumps_made >= 1:
+        elif not self.double_jump_enabled and self.jumps_left == 0:
             print("DEBUG: Double jump not unlocked! Purchase it from the shop.")
         return None
 
@@ -805,10 +840,10 @@ class Boss(pygame.sprite.Sprite):
         self.max_health = health
         self.health = health
         self.speed = speed
-        self.shoot_interval = shoot_interval / 1000.0  # Convert ms to seconds for time.time()
+        self.shoot_interval = shoot_interval  # Now assumed to be in milliseconds
         self.phases = phases
         self.current_phase = 1
-        self.last_shot_time = time.time()
+        self.last_shot_time = pygame.time.get_ticks() # Use pygame.time.get_ticks() for consistency with shoot_interval
         self.pattern_counter = 0  # Used for cycling through patterns
 
         # Flashing effect for damage
@@ -816,11 +851,83 @@ class Boss(pygame.sprite.Sprite):
         self.flash_timer = 0
         self.flash_duration = 100 # milliseconds
 
-        self.load_image()
+        self.animations = {} # Initialize animations dictionary
+        self.load_animations() # Load animations
+        self.action = 'idle'
+        self.frame_index = 0
+        self.last_frame_update = pygame.time.get_ticks()
+
+        self.image = self.animations[self.action][self.frame_index] # Set initial image
         self.rect = self.image.get_rect(center=(x, y))
         self.original_image = self.image.copy() # Store original for flashing
 
         self.direction = 1 # For simple horizontal movement
+
+    def load_animations(self):
+        self.animations = {'idle': [], 'walk': [], 'death': []}
+        boss_size = (72, 72) # Adjust size to exact frame dimensions
+
+        # Load Idle animation
+        try:
+            sheet = SpriteSheet(BOSS_IDLE_SPRITE_PATH)
+            frames = sheet.get_animation_frames(72, 72) # Use provided frame dimensions
+            self.animations['idle'] = [pygame.transform.scale(frame, boss_size) for frame in frames]
+        except (pygame.error, FileNotFoundError):
+            print(f"Warning: Could not load boss idle animation: {BOSS_IDLE_SPRITE_PATH}")
+            placeholder_frame = pygame.Surface(boss_size, pygame.SRCALPHA); placeholder_frame.fill(PURPLE)
+            self.animations['idle'] = [placeholder_frame] * 4
+
+        # Load Walk animation
+        try:
+            sheet = SpriteSheet(BOSS_WALK_SPRITE_PATH)
+            frames = sheet.get_animation_frames(72, 72) # Use provided frame dimensions
+            self.animations['walk'] = [pygame.transform.scale(frame, boss_size) for frame in frames]
+        except (pygame.error, FileNotFoundError):
+            print(f"Warning: Could not load boss walk animation: {BOSS_WALK_SPRITE_PATH}")
+            placeholder_frame = pygame.Surface(boss_size, pygame.SRCALPHA); placeholder_frame.fill(DARK_PURPLE)
+            self.animations['walk'] = [placeholder_frame] * 4
+        
+        # Load Death animation
+        try:
+            sheet = SpriteSheet(BOSS_DEATH_SPRITE_PATH)
+            frames = sheet.get_animation_frames(72, 72) # Use provided frame dimensions
+            self.animations['death'] = [pygame.transform.scale(frame, boss_size) for frame in frames]
+        except (pygame.error, FileNotFoundError):
+            print(f"Warning: Could not load boss death animation: {BOSS_DEATH_SPRITE_PATH}")
+            placeholder_frame = pygame.Surface(boss_size, pygame.SRCALPHA); placeholder_frame.fill(RED)
+            self.animations['death'] = [placeholder_frame] * 4
+
+    def animate(self):
+        now = pygame.time.get_ticks()
+        current_animation = self.animations.get(self.action)
+        if not current_animation:
+            current_animation = self.animations['idle'] # Fallback
+
+        animation_speed = 150 # Default speed
+        if self.action == 'death':
+            animation_speed = 200 # Slower death animation
+            # Don't loop death animation
+            if self.frame_index == len(current_animation) - 1:
+                # Keep showing the last frame of death animation
+                new_image = current_animation[self.frame_index]
+                if self.direction == -1:
+                    new_image = pygame.transform.flip(new_image, True, False)
+                center = self.rect.center
+                self.image, self.rect = new_image, new_image.get_rect(center=center)
+                self.original_image = self.image.copy()
+                return
+
+        if now - self.last_frame_update > animation_speed:
+            self.last_frame_update = now
+            self.frame_index = (self.frame_index + 1) % len(current_animation)
+            
+            new_image = current_animation[self.frame_index]
+            if self.direction == -1: # Assuming Boss also flips based on direction
+                new_image = pygame.transform.flip(new_image, True, False)
+            
+            center = self.rect.center
+            self.image, self.rect = new_image, new_image.get_rect(center=center)
+            self.original_image = self.image.copy() # Update original_image for flashing
 
     def load_image(self):
         # Placeholder image for the boss
@@ -838,12 +945,23 @@ class Boss(pygame.sprite.Sprite):
             self.image.fill(RED)
 
     def update(self):
+        if self.action == 'death':
+            self.animate() # Continue death animation
+            if self.frame_index == len(self.animations['death']) - 1 and pygame.time.get_ticks() - self.last_frame_update > 150:
+                self.kill() # Only kill after last frame of death animation
+            return # Stop other updates if boss is dying
+
         # Simple horizontal movement for now
         self.rect.x += self.speed * self.direction
         if self.rect.left < 0 or self.rect.right > SCREEN_WIDTH:
             self.direction *= -1
 
-        now = time.time()
+        # Always use idle animation if not dying
+        self.action = 'idle'
+        
+        self.animate() # Update boss animation
+
+        now = pygame.time.get_ticks() # Use pygame.time.get_ticks() for consistency
         if now - self.last_shot_time > self.shoot_interval:
             self.last_shot_time = now
             if self.boss_type == 1:
@@ -906,7 +1024,8 @@ class Boss(pygame.sprite.Sprite):
         self.health -= amount
         if self.health <= 0:
             self.health = 0
-            self.kill()
+            self.action = 'death' # Set action to death
+            # self.kill() will be called after death animation plays, or in update if health remains 0
             return
         self.is_flashing = True
         self.flash_timer = pygame.time.get_ticks()

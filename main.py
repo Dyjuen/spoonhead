@@ -39,6 +39,7 @@ class Game:
         self.gacha_result = None
         self.gacha_animation_timer = 0
         self.gacha_gun_display_images = {} # For displaying gun in gacha animation
+        self._mixer_was_initialized = True # Assume initialized at start
 
         self.unlocked_levels = 1
         self.total_coins = 0
@@ -72,7 +73,7 @@ class Game:
         self.level_cards = []
         
         self.shop_screen = ShopScreen(self.screen, self.total_coins, self.upgrades, SHOP_ITEMS)
-        self.inventory_screen = InventoryScreen(self.screen, self.selected_character, self.unlocked_guns, GUN_DATA, CHARACTER_DATA, self.equipped_gun_id)
+        self.inventory_screen = InventoryScreen(self.screen, self.selected_character, self.unlocked_guns, GUN_DATA, CHARACTER_DATA, self.equipped_gun_id, self.unlocked_characters)
 
         self.load_assets()
         self.apply_settings()
@@ -97,6 +98,12 @@ class Game:
                 # Load unlocked characters and guns
                 self.unlocked_characters = data.get('unlocked_characters', ['cyborg'])
                 self.selected_character = data.get('selected_character', 'cyborg')
+                
+                # Validate selected character
+                if self.selected_character not in self.unlocked_characters:
+                    print(f"Warning: Selected character '{self.selected_character}' not unlocked. Defaulting to 'cyborg'.")
+                    self.selected_character = 'cyborg'
+
                 self.unlocked_guns = data.get('unlocked_guns', ['pistol_1'])
                 self.equipped_gun_id = data.get('equipped_gun_id', 'pistol_1')
 
@@ -211,7 +218,7 @@ class Game:
         self.power_ups = pygame.sprite.Group()
         
         # Player
-        self.player = Player(100, 400, self, upgrades=self.upgrades, character_id=self.selected_character, equipped_gun_id=self.equipped_gun_id)
+        self.player = Player(100, 400, self, upgrades=self.upgrades, character_id=self.selected_character, equipped_gun_id=self.equipped_gun_id, upgrades_data=self.upgrades)
         
         # Level Objects
         for p_data in level_data["platforms"]:
@@ -225,9 +232,7 @@ class Game:
         for e_data in level_data["enemies"]:
             self.enemies.add(Enemy(player=self.player, **e_data))
         for b_data in level_data.get("power_up_boxes", []):
-            b = PowerUpBox(*b_data)
-            self.power_up_boxes.add(b)
-            self.platforms.add(b)
+            self.power_up_boxes.add(PowerUpBox(*b_data))
         
         self.boss_gate = BossGate(level_data["boss_gate_x"], 460)
         self.boss_gate_group.add(self.boss_gate)
@@ -249,6 +254,7 @@ class Game:
         pygame.mixer.music.stop()
         pygame.mixer.music.load(LEVEL_MUSIC)
         pygame.mixer.music.play(-1)
+        print("DEBUG MUSIC: Started LEVEL_MUSIC.")
 
     def init_boss_fight(self):
         self.game_state = 'boss_fight'
@@ -278,12 +284,19 @@ class Game:
         pygame.mixer.music.stop()
         pygame.mixer.music.load(BOSS_THEME)
         pygame.mixer.music.play(-1)
+        print("DEBUG MUSIC: Started BOSS_THEME.")
 
     def draw_text(self, text, size, x, y, color=WHITE, align="center"):
         font = pygame.font.Font(PIXEL_FONT, size)
         text_surface = font.render(text, True, color)
         text_rect = text_surface.get_rect(**{align: (x, y)})
         self.screen.blit(text_surface, text_rect)
+
+    def _play_sfx(self, sfx_name, loops=0):
+        if self.sfx.get(sfx_name):
+            self.sfx[sfx_name].play(loops)
+        # else: Removed debug print
+            # print(f"DEBUG SFX: Warning: Sound '{sfx_name}' not found in sfx dictionary or is None.")
 
     def buy_gun_crate(self):
         crate_cost = 500
@@ -314,8 +327,9 @@ class Game:
                 }
                 self.game_state = 'gacha_animation'
                 self.gacha_animation_timer = pygame.time.get_ticks()
-                self.inventory_screen.update_data(self.selected_character, self.unlocked_guns, self.equipped_gun_id)
+                self.inventory_screen.update_data(self.selected_character, self.unlocked_guns, self.equipped_gun_id, self.unlocked_characters)
                 self.save_game_data()
+                self.shop_screen.total_coins = self.total_coins # Explicitly update shop UI coins
             else:
                 print("No guns in the chosen tier.")
         else:
@@ -327,19 +341,37 @@ class Game:
             if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE): 
                 self.save_game_data()
                 self.running = False
+                # Explicitly quit mixer if it's initialized, to prevent resource leaks/issues
+                if pygame.mixer.get_init():
+                    pygame.mixer.quit()
 
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_p and self.game_state in ['platformer', 'boss_fight']:
                     self.paused = not self.paused
                 if event.key == pygame.K_u and self.game_state in ['platformer', 'boss_fight'] and not self.paused:
                     self.u_pressed = True
+                
+                # Jump handling (keyboard)
+                if (event.key == pygame.K_SPACE or event.key == pygame.K_w) and self.game_state in ['platformer', 'boss_fight'] and not self.paused:
+                    if self.player:
+                        sfx_to_play = self.player.jump()
+                        if sfx_to_play: # No need to check sfx.get() here, helper does it
+                            self._play_sfx(sfx_to_play)
+
+            # Controller Jump handling (A button) - outside KEYDOWN block for consistency
+            if event.type == pygame.JOYBUTTONDOWN:
+                if event.button == self.controller.BUTTON_A and self.game_state in ['platformer', 'boss_fight'] and not self.paused:
+                    if self.player:
+                        sfx_to_play = self.player.jump()
+                        if sfx_to_play: # No need to check sfx.get() here, helper does it
+                            self._play_sfx(sfx_to_play)
 
             if self.paused:
                 if self.resume_button.is_clicked(event, mouse_pos):
                     self.paused = False
                 elif self.main_menu_button.is_clicked(event, mouse_pos):
                     self.paused = False
-                    self.total_coins += self.player.coins
+                    # self.total_coins += self.player.coins # Removed
                     self.save_game_data()
                     self.game_state = 'home_screen'
                     pygame.mixer.music.stop()
@@ -395,14 +427,14 @@ class Game:
                         self.equipped_gun_id = result[1]
                         if self.player:
                             self.player.equip_gun(self.equipped_gun_id)
-                        self.inventory_screen.update_data(self.selected_character, self.unlocked_guns, self.equipped_gun_id)
+                        self.inventory_screen.update_data(self.selected_character, self.unlocked_guns, self.equipped_gun_id, self.unlocked_characters)
             elif self.game_state == 'shop_screen':
                 if self.back_button.is_clicked(event, mouse_pos): self.game_state = 'level_selection'
                 
                 result = self.shop_screen.handle_event(event)
                 if result == 'buy_crate':
                     self.buy_gun_crate()
-                elif result: # Should be an item_id for an upgrade
+                elif result: # Should be an item_id for an upgrade or character
                     item_data = SHOP_ITEMS[result]
                     current_level = self.upgrades.get(result, 0)
 
@@ -411,9 +443,20 @@ class Game:
                         if self.total_coins >= price:
                             self.total_coins -= price
                             self.upgrades[result] += 1
+
+                            # Check if bought item is a character
+                            if result in CHARACTER_DATA and result not in self.unlocked_characters:
+                                self.unlocked_characters.append(result)
+                                # Optionally, update selected character to the newly unlocked one
+                                # self.selected_character = result 
+                                # self.inventory_screen.update_data(self.selected_character, self.unlocked_guns, self.equipped_gun_id, self.unlocked_characters)
+                                print(f"Character '{item_data['name']}' unlocked!")
+                            
                             self.save_game_data()
                             self.shop_screen.total_coins = self.total_coins
                             self.shop_screen.upgrades = self.upgrades
+                            # Update inventory screen after purchase in case it was a character
+                            self.inventory_screen.update_data(self.selected_character, self.unlocked_guns, self.equipped_gun_id, self.unlocked_characters)
             elif self.game_state == 'settings':
                 if self.back_button.is_clicked(event, mouse_pos): self.game_state = 'home_screen'
 
@@ -434,19 +477,29 @@ class Game:
 
     def change_character(self, character_id):
         self.selected_character = character_id
-        self.inventory_screen.update_data(self.selected_character, self.unlocked_guns, self.equipped_gun_id)
+        self.inventory_screen.update_data(self.selected_character, self.unlocked_guns, self.equipped_gun_id, self.unlocked_characters)
         # We need to re-initialize the player and inventory screen to reflect the change
         # A full re-initialization of the level is the simplest way to do this for now
         if self.game_state == 'platformer' or self.game_state == 'boss_fight':
              self.init_level(self.current_level)
         else:
             # If we are not in a level, we can just recreate the player object
-            self.player = Player(0, 0, self, upgrades=self.upgrades, character_id=self.selected_character)
-            self.inventory_screen.update_data(self.selected_character, self.unlocked_guns, self.equipped_gun_id)
+            self.player = Player(0, 0, self, upgrades=self.upgrades, character_id=self.selected_character, upgrades_data=self.upgrades)
+            self.inventory_screen.update_data(self.selected_character, self.unlocked_guns, self.equipped_gun_id, self.unlocked_characters)
 
     def update_game_state(self):
         if self.paused:
             return
+
+        # DEBUG MIXER: Check mixer status more robustly
+        if self._mixer_was_initialized and not pygame.mixer.get_init():
+            print("CRITICAL DEBUG MIXER: pygame.mixer became uninitialized! Sound lost.")
+            self._mixer_was_initialized = False # Mark as uninitialized
+
+        if pygame.mixer.get_init(): # Only print if initialized to avoid spamming the error
+            print(f"DEBUG MIXER: Mixer initialized: {pygame.mixer.get_init()}, Channels: {pygame.mixer.get_num_channels()}, Busy: {pygame.mixer.get_busy()} Music Busy: {pygame.mixer.music.get_busy()}")
+        else:
+            print("DEBUG MIXER: Mixer is NOT initialized. Cannot query status.")
 
         # Player death check moved inside gameplay state condition
         if self.game_state in ['platformer', 'boss_fight']:
@@ -454,8 +507,8 @@ class Game:
                 pygame.mixer.music.stop()
                 if self.sfx.get('walk'): self.sfx['walk'].stop()
                 self.walking_sound_playing = False
-                if self.death_sound: self.death_sound.play()
-                self.total_coins += self.player.coins
+                if self.death_sound: self._play_sfx('death') # Replaced with helper
+                # self.total_coins += self.player.coins # Removed
                 self.save_game_data()
                 self.game_state = 'game_over'
 
@@ -477,7 +530,7 @@ class Game:
         if not self.player and self.game_state in ['platformer', 'boss_fight']:
             # This case should ideally not happen if init_level is called correctly
             print("Warning: Player is None in gameplay state, attempting to re-initialize.")
-            self.player = Player(0, 0, self, upgrades=self.upgrades, character_id=self.selected_character, equipped_gun_id=self.equipped_gun_id)
+            self.player = Player(0, 0, self, upgrades=self.upgrades, character_id=self.selected_character, equipped_gun_id=self.equipped_gun_id, upgrades_data=self.upgrades)
             self.all_sprites.add(self.player)
 
 
@@ -498,18 +551,14 @@ class Game:
             return # Don't run player update logic during gacha animation
 
         actions = self.controller.get_actions()
-        if actions.get('jump'): 
-            sfx_to_play = self.player.jump()
-            if sfx_to_play and self.sfx.get(sfx_to_play):
-                self.sfx[sfx_to_play].play()
 
         if actions.get('dash'): self.player.dash()
         if actions.get('shoot'):
             projectiles, sfx_name = self.player.shoot(actions.get('shoot_direction', 'horizontal'))
             if projectiles: 
                 self.all_sprites.add(projectiles); self.projectiles.add(projectiles)
-                if sfx_name and self.sfx.get(sfx_name):
-                    self.sfx[sfx_name].play()
+                if sfx_name: # No need to check sfx.get() here, helper does it
+                    self._play_sfx(sfx_name)
 
         if actions.get('switch_weapon'):
             self.player.switch_weapon()
@@ -524,8 +573,7 @@ class Game:
         sfx_events = self.player.update(actions.get('move_x'), self.platforms)
         if sfx_events:
             for sfx in sfx_events:
-                if self.sfx.get(sfx):
-                    self.sfx[sfx].play()
+                self._play_sfx(sfx) # No need to check sfx.get() here, helper does it
 
         self.projectiles.update()
 
@@ -533,21 +581,23 @@ class Game:
         if self.game_state in ['platformer', 'boss_fight']:
             is_moving = actions.get('move_x') is not None and (actions['move_x'] < 0.4 or actions['move_x'] > 0.6)
             if is_moving and self.player.on_ground and not self.walking_sound_playing:
-                if self.sfx.get('walk'):
-                    self.sfx['walk'].play(-1)  # Loop
-                    self.walking_sound_playing = True
+                self._play_sfx('walk', -1)  # Loop, No need to check sfx.get() here, helper does it
+                self.walking_sound_playing = True
             elif (not is_moving or not self.player.on_ground) and self.walking_sound_playing:
-                if self.sfx.get('walk'):
+                if self.sfx.get('walk'): # Keep check for stopping, as _play_sfx can't stop
                     self.sfx['walk'].stop()
                     self.walking_sound_playing = False
 
         if self.game_state == 'platformer':
             self.coins.update()
 
-            if pygame.sprite.spritecollide(self.player, self.coins, True): 
-                self.player.coins += 1
-                if self.sfx.get('coin'):
-                    self.sfx['coin'].play()
+            # Custom collision for coins using player's hitbox
+            for coin in pygame.sprite.spritecollide(self.player, self.coins, False): # Don't kill automatically
+                if self.player.hitbox.colliderect(coin.rect): # Check if player's hitbox collides with coin's rect
+                    coin.kill() # Manually kill the coin
+                    self.total_coins += 1
+                    self.player.coins_collected_in_level += 1 # Increment level-specific counter
+                    self._play_sfx('coin') # No need to check sfx.get() here, helper does it
 
             hit_power_ups = pygame.sprite.spritecollide(self.player, self.power_ups, True)
             for power_up in hit_power_ups:
@@ -595,19 +645,29 @@ class Game:
                 self.player.take_damage(25)
 
         if self.player.rect.top > SCREEN_HEIGHT + 200: 
-            self.total_coins += self.player.coins
+            # self.total_coins += self.player.coins # Removed as coins are added on collection
             self.save_game_data()
             self.game_state = 'game_over'
 
         if self.boss and not self.boss.alive() and self.game_state == 'boss_fight':
-            self.game_state = 'victory'; self.total_coins += self.player.coins
+            self.game_state = 'victory'; # Removed self.total_coins += self.player.coins
             pygame.mixer.music.stop()
-            if self.sfx.get('victory'):
-                self.sfx['victory'].play()
-            if self.sfx.get('walk'): self.sfx['walk'].stop()
+            if self.current_level == self.unlocked_levels and self.unlocked_levels < len(ALL_LEVELS): self.unlocked_levels += 1 # Moved before save
+            self.save_game_data() # Save game data on victory
+
+        # Ensure music keeps playing if in a gameplay state
+        if self.game_state == 'platformer' and not pygame.mixer.music.get_busy():
+            print("DEBUG MUSIC: LEVEL_MUSIC stopped unexpectedly. Restarting.")
+            pygame.mixer.music.load(LEVEL_MUSIC)
+            pygame.mixer.music.play(-1)
+        elif self.game_state == 'boss_fight' and not pygame.mixer.music.get_busy():
+            print("DEBUG MUSIC: BOSS_THEME stopped unexpectedly. Restarting.")
+            pygame.mixer.music.load(BOSS_THEME)
+            pygame.mixer.music.play(-1)
+
+            self._play_sfx('victory') # No need to check sfx.get() here, helper does it
+            if self.sfx.get('walk'): self.sfx['walk'].stop() # Keep check for stopping, as _play_sfx can't stop
             self.walking_sound_playing = False
-            if self.current_level == self.unlocked_levels and self.unlocked_levels < len(ALL_LEVELS): self.unlocked_levels += 1
-            self.save_game_data()
 
     def update_camera(self):
         # Simple camera that keeps the player in the middle of the screen
@@ -747,6 +807,20 @@ class Game:
                     self.draw_text(f"Refunded {500 // 2} coins", 20, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 220, YELLOW)
                 else:
                     self.draw_text("New Gun Unlocked!", 40, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 180, GREEN)
+        elif self.game_state == 'settings': # NEW BLOCK
+            self.draw_text("Settings", 40, SCREEN_WIDTH / 2, 80, GOLD)
+
+            # Volume controls
+            self.draw_text(f"Volume: {int(self.volume * 100)}%", 25, SCREEN_WIDTH / 2, 225)
+            self.volume_down_button.draw(self.screen, mouse_pos)
+            self.volume_up_button.draw(self.screen, mouse_pos)
+
+            # Fullscreen toggle
+            self.fullscreen_button.draw(self.screen, mouse_pos)
+            self.draw_text(f"Fullscreen: {'On' if self.fullscreen else 'Off'}", 25, SCREEN_WIDTH / 2, 375)
+
+            self.back_button.draw(self.screen, mouse_pos) # Back button
+
         elif self.game_state in ['platformer', 'boss_fight', 'victory', 'game_over']:
             if self.game_state == 'platformer':
                 for sprite in self.all_sprites: self.screen.blit(sprite.image, (sprite.rect.x - self.camera_x, sprite.rect.y))
@@ -773,7 +847,7 @@ class Game:
                 overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA); overlay.fill((0, 0, 0, 128)); self.screen.blit(overlay, (0, 0))
                 if self.game_state == 'victory':
                     self.draw_text("VICTORY!", 60, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 - 50, GOLD)
-                    if self.current_level == self.unlocked_levels and self.unlocked_levels < len(ALL_LEVELS): self.draw_text(f"Level {self.unlocked_levels} Unlocked!", 30, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 60)
+                    if self.current_level == self.unlocked_levels and self.unlocked_levels < len(ALL_LEVELS): self.draw_text(f"Level {self.current_level + 1} Unlocked!", 30, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 60)
                     self.draw_text("Press any key to continue", 20, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 100)
                 else:
                     self.draw_text("GAME OVER", 60, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 - 30, RED); self.draw_text("Press R to Restart Level", 20, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 40)
@@ -797,20 +871,21 @@ class Game:
         current_health_rect = pygame.Rect(20, 20, current_health_width, 25)
         pygame.draw.rect(self.screen, GREEN, current_health_rect)
         
-        self.draw_text(f"Health: {self.player.health}", 18, 120, 32)
+        self.draw_text(f"Health: {self.player.health}", 18, 120, 32) # Keep health bar info roughly where it is
         
         # Coins
-        self.draw_text(f"Coins: {self.total_coins}", 20, SCREEN_WIDTH - 100, 30, GOLD) # Changed to self.total_coins
+        # self.draw_text(f"Level Coins: {self.player.coins_collected_in_level}", 20, 10, 60, GOLD, align="topleft")
+        self.draw_text(f"Total Coins: {self.total_coins}", 20, 10, 90, GOLD, align="topleft") # Moved Total Coins up
         
         # Current Weapon
         current_weapon_name = self.player.unlocked_weapons[self.player.current_weapon_index].replace('_', ' ').title()
-        self.draw_text(f"Weapon: {current_weapon_name}", 20, SCREEN_WIDTH - 100, 60, WHITE)
+        self.draw_text(f"Weapon: {current_weapon_name}", 20, 10, 120, WHITE, align="topleft") # Aligned left, below Total Coins
 
         # Ultimate Meter
         if self.player.ultimate_ready:
-            self.draw_text("ULTIMATE READY!", 20, SCREEN_WIDTH / 2, 90, YELLOW)
+            self.draw_text("ULTIMATE READY!", 20, SCREEN_WIDTH / 2, 30, YELLOW) # Keep top center
         else:
-            self.draw_text(f"Ultimate: {self.player.ultimate_meter}/{self.player.ultimate_max_meter}", 20, SCREEN_WIDTH / 2, 90, WHITE)
+            self.draw_text(f"Ultimate: {self.player.ultimate_meter}/{self.player.ultimate_max_meter}", 20, SCREEN_WIDTH / 2, 30, WHITE) # Keep top center
 
     def run(self):
         while self.running:
