@@ -658,8 +658,8 @@ class Enemy(pygame.sprite.Sprite):
 class EnemyProjectile(pygame.sprite.Sprite):
     def __init__(self, x, y, vx, vy):
         super().__init__()
-        self.image = pygame.Surface((12, 12), pygame.SRCALPHA); self.image.fill(ORANGE)
-        pygame.draw.circle(self.image, YELLOW, (6, 6), 6)
+        self.image = pygame.Surface((12, 12), pygame.SRCALPHA); self.image.fill(RED)
+        pygame.draw.circle(self.image, RED, (6, 6), 6)
         self.rect = self.image.get_rect(center=(x, y))
         self.vx, self.vy, self.lifetime = vx, vy, 180
 
