@@ -70,8 +70,8 @@ LEVEL_1 = {
         { "x": 7200, "y": 500, "patrol_distance": 100, "speed": 2, "shoot_cooldown": 1.5 },
     ],
     "power_up_boxes": [
-        (500, 400),
-        (4500, 400),
+        (750, 350),
+        (4500, 300),
     ],
     "boss": {
         "boss_type": 1,
