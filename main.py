@@ -563,7 +563,11 @@ class Game:
                 if hit_boxes:
                     proj.kill()
                     for box in hit_boxes:
-                        box.take_damage(proj.damage)
+                        if box.take_damage(proj.damage): # If box is destroyed
+                            # Spawn a PowerUp at the box's position
+                            power_up = PowerUp(box.rect.centerx, box.rect.centery, box.power_up_type)
+                            self.all_sprites.add(power_up)
+                            self.power_ups.add(power_up)
 
             if pygame.sprite.spritecollide(self.player, self.boss_gate_group, False): 
                 self.init_boss_fight()
