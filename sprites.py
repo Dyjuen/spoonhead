@@ -597,19 +597,41 @@ class Player(pygame.sprite.Sprite):
         if self.ultimate_ready:
             self.ultimate_meter = 0
             self.ultimate_ready = False
-            # Create a massive projectile
-            # For simplicity, let's make it deal a fixed high damage and be larger
-            massive_damage = 50
-            massive_speed = 15
+            
             direction = 1 if self.facing_right else -1
-            # Adjust projectile's appearance or properties for massive shot if needed
-            # There is no special animation for the ultimate, the projectile is just scaled up.
-            proj = Projectile(self.rect.centerx, self.rect.centery, massive_speed * direction, 0, damage=massive_damage)
-            # You might want to make this projectile visually different (e.g., larger sprite, different color)
-            # This would require modifying the Projectile class or creating a new UltimateProjectile class.
-            # For now, we'll just use the regular Projectile class with higher damage.
-            proj.image = pygame.transform.scale(proj.image, (40, 20)) # Example: make it bigger
-            return proj
+            
+            if self.character_id == 'cyborg':
+                # Giant Laser
+                proj = Projectile(self.rect.centerx, self.rect.centery, 20 * direction, 0, damage=100)
+                proj.image = pygame.transform.scale(proj.image, (80, 40)) 
+                proj.rect = proj.image.get_rect(center=proj.rect.center)
+                return proj
+                
+            elif self.character_id == 'biker':
+                # Spread Burst (Shotgun blast)
+                projectiles = pygame.sprite.Group()
+                for angle in range(-20, 21, 10): 
+                    rad = math.radians(angle)
+                    if direction == -1: rad = math.pi - rad # Adjust for left facing
+                    
+                    vx = 18 * math.cos(rad)
+                    vy = 18 * math.sin(rad)
+                    p = Projectile(self.rect.centerx, self.rect.centery, vx, vy, damage=25)
+                    projectiles.add(p)
+                return projectiles
+                
+            elif self.character_id == 'punk':
+                # Punk Bomb (Slow moving, huge damage)
+                proj = Projectile(self.rect.centerx, self.rect.centery, 8 * direction, 0, damage=150)
+                size = 60
+                proj.image = pygame.Surface((size, size), pygame.SRCALPHA)
+                pygame.draw.circle(proj.image, ORANGE, (size//2, size//2), size//2)
+                pygame.draw.circle(proj.image, YELLOW, (size//2, size//2), size//2 - 5)
+                proj.rect = proj.image.get_rect(center=self.rect.center)
+                return proj
+            
+            # Fallback
+            return Projectile(self.rect.centerx, self.rect.centery, 15 * direction, 0, damage=50)
         return None
 
 
