@@ -225,7 +225,9 @@ class Game:
         for e_data in level_data["enemies"]:
             self.enemies.add(Enemy(player=self.player, **e_data))
         for b_data in level_data.get("power_up_boxes", []):
-            self.power_up_boxes.add(PowerUpBox(*b_data))
+            b = PowerUpBox(*b_data)
+            self.power_up_boxes.add(b)
+            self.platforms.add(b)
         
         self.boss_gate = BossGate(level_data["boss_gate_x"], 460)
         self.boss_gate_group.add(self.boss_gate)
