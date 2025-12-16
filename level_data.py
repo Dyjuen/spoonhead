@@ -78,8 +78,8 @@ LEVEL_1 = {
         "x": 4000,
         "y": 400,
         "health": 250,
-        "speed": 2,
-        "shoot_interval": 80, # Slower shooting
+        "speed": 4,
+        "shoot_interval": 100,
         "phases": 1, # Only one phase
     },
     "boss_gate_x": 7800,
@@ -141,8 +141,8 @@ LEVEL_2 = {
         "x": 4200,
         "y": 350,
         "health": 350,      # Reduced from 500
-        "speed": 3,         # Reduced from 4
-        "shoot_interval": 60, # Increased from 40
+        "speed": 5,         # Reduced from 4
+        "shoot_interval": 200,
         "phases": 1,        # Reduced from 2
     },
     "boss_gate_x": 7800,
@@ -210,8 +210,8 @@ LEVEL_3 = {
         "x": 4600,
         "y": 300,
         "health": 750,
-        "speed": 5, # Very fast
-        "shoot_interval": 20, # Very frequent shooting
+        "speed": 7, # Very fast
+        "shoot_interval": 150,
         "phases": 3, # All three phases
     },
     "boss_gate_x": 8800,

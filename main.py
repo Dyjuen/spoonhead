@@ -14,8 +14,12 @@ from shop import ShopScreen
 from gun_data import GUN_DATA
 from inventory import InventoryScreen, TIER_COLORS # Import TIER_COLORS
 from benchmark import Benchmark
+from parallax import Parallax
 
 SAVE_FILE = 'save.json'
+
+def collide_hitbox(sprite1, sprite2):
+    return sprite1.hitbox.colliderect(sprite2.hitbox)
 
 class Game:
     """Main game class with a multi-level structure and persistence."""
@@ -24,7 +28,7 @@ class Game:
         pygame.init()
         pygame.mixer.init()
         pygame.mixer.set_num_channels(16)
-        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.DOUBLEBUF)
         Projectile.load_images()
         pygame.display.set_caption("Spoonhead")
         self.clock = pygame.time.Clock()
@@ -43,6 +47,10 @@ class Game:
         self.gacha_animation_timer = 0
         self.gacha_gun_display_images = {} # For displaying gun in gacha animation
         self._mixer_was_initialized = True # Assume initialized at start
+
+        self.screen_shake_duration = 0
+        self.screen_shake_intensity = 0
+        self.screen_shake_start_time = 0
 
         self.unlocked_levels = 1
         self.total_coins = 0
@@ -78,6 +86,7 @@ class Game:
         self.shop_screen = ShopScreen(self.screen, self.total_coins, self.upgrades, SHOP_ITEMS)
         self.inventory_screen = InventoryScreen(self.screen, self.selected_character, self.unlocked_guns, GUN_DATA, CHARACTER_DATA, self.equipped_gun_id, self.unlocked_characters)
         self.benchmark = Benchmark(SCREEN_WIDTH, SCREEN_HEIGHT)
+        self.parallax = Parallax(SCREEN_WIDTH, SCREEN_HEIGHT)
 
         self.load_assets()
         self.apply_settings()
@@ -105,14 +114,12 @@ class Game:
                 
                 # Validate selected character
                 if self.selected_character not in self.unlocked_characters:
-                    print(f"Warning: Selected character '{self.selected_character}' not unlocked. Defaulting to 'cyborg'.")
                     self.selected_character = 'cyborg'
 
                 self.unlocked_guns = data.get('unlocked_guns', ['pistol_1'])
                 self.equipped_gun_id = data.get('equipped_gun_id', 'pistol_1')
 
         except (FileNotFoundError, json.JSONDecodeError):
-            print("Save file not found, starting new game.")
             self.unlocked_levels = 1
             self.total_coins = 0
             self.upgrades = {item_id: 0 for item_id in SHOP_ITEMS}
@@ -145,16 +152,33 @@ class Game:
         if self.sfx:
             for sound in self.sfx.values():
                 sound.set_volume(self.volume)
-        
+
         if self.fullscreen:
             self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.FULLSCREEN)
         else:
-            self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+            self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.DOUBLEBUF)
+
+        # After changing display mode, mixer might be uninitialized.
+        # Re-initialize only if it's not already initialized.
+        if not pygame.mixer.get_init():
+            pygame.mixer.init()
+            pygame.mixer.set_num_channels(16)
+            self.load_assets()  # Reload sounds to ensure they are available
+
+        pygame.mixer.music.set_volume(self.volume)  # Re-apply volume settings
+        if self.game_state == 'platformer':
+            pygame.mixer.music.load(LEVEL_MUSIC)
+            pygame.mixer.music.play(-1)
+        elif self.game_state == 'boss_fight':
+            pygame.mixer.music.load(BOSS_THEME)
+            pygame.mixer.music.play(-1)
+        elif self.game_state in ['home_screen', 'level_selection', 'shop_screen', 'inventory', 'settings']:
+            pygame.mixer.music.load(THEME_MUSIC)
+            pygame.mixer.music.play(-1)
 
     def load_assets(self):
         try:
-            self.bg_image = pygame.transform.scale(pygame.image.load(os.path.join("assets", "bg.jpg")).convert(), (SCREEN_WIDTH, SCREEN_HEIGHT))
-            self.boss_bg_image = pygame.transform.scale(pygame.image.load(os.path.join("assets", "bg2.jpg")).convert(), (SCREEN_WIDTH, SCREEN_HEIGHT))
+            self.menu_bg_image = pygame.transform.scale(pygame.image.load(os.path.join("assets", "Background", "menu.png")), (SCREEN_WIDTH, SCREEN_HEIGHT))
             self.sfx = {
                 'default_shot': pygame.mixer.Sound(DEFAULT_SHOT_SOUND),
                 'spread_shot': pygame.mixer.Sound(SPREAD_SHOT_SOUND),
@@ -165,12 +189,10 @@ class Game:
                 'landing': pygame.mixer.Sound(LANDING_SOUND),
                 'coin': pygame.mixer.Sound(COIN_SOUND),
                 'victory': pygame.mixer.Sound(VICTORY_SOUND),
+                'explosion': pygame.mixer.Sound("assets/audio/burst.mp3"), # Placeholder for explosion sound
             }
             self.death_sound = self.sfx['death'] # Keep separate reference for existing logic
         except pygame.error as e:
-            print(f"Warning: Could not load assets: {e}")
-            self.bg_image = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT)); self.bg_image.fill(SKY_BLUE)
-            self.boss_bg_image = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT)); self.boss_bg_image.fill(DARK_GRAY)
             self.sfx = {}
             self.death_sound = None
         self.start_button = Button(SCREEN_WIDTH/2 - 100, SCREEN_HEIGHT/2 - 50, 200, 50, "Start Game", BLUE, PURPLE)
@@ -183,8 +205,10 @@ class Game:
         self.level_cards = []
 
         self.shop_button = Button(SCREEN_WIDTH - 170, 20, 150, 50, "Shop", GOLD, PURPLE, font_size=16)
-        self.inventory_button = Button(SCREEN_WIDTH - 170, 90, 150, 50, "Inventory", GOLD, PURPLE, font_size=16)
+        self.inventory_button = Button(SCREEN_WIDTH - 170, 90, 150, 50, "Inventory", GOLD, PURPLE, font_size=12)
         self.back_button = Button(20, 20, 150, 50, "Back", RED, PURPLE)
+        self.level_select_button = Button(SCREEN_WIDTH - 60, 20, 40, 40, "X", RED, DARK_GRAY)
+
 
         # Settings screen buttons
         self.volume_down_button = Button(SCREEN_WIDTH/2 - 150, 275, 50, 50, "-", RED, PURPLE)
@@ -192,8 +216,11 @@ class Game:
         self.fullscreen_button = Button(SCREEN_WIDTH/2 - 150, 350, 300, 50, "Toggle Fullscreen", BLUE, PURPLE)
 
         # Pause menu buttons
-        self.resume_button = Button(SCREEN_WIDTH/2 - 100, SCREEN_HEIGHT/2 - 50, 200, 50, "Resume", BLUE, PURPLE)
+        self.resume_button = Button(SCREEN_WIDTH/2 - 100, SCREEN_HEIGHT/2 - 120, 200, 50, "Resume", BLUE, PURPLE)
+        self.settings_button_ingame = Button(SCREEN_WIDTH/2 - 100, SCREEN_HEIGHT/2 - 50, 200, 50, "Settings", GRAY, PURPLE)
         self.main_menu_button = Button(SCREEN_WIDTH/2 - 100, SCREEN_HEIGHT/2 + 20, 200, 50, "Main Menu", RED, PURPLE)
+        self.exit_button_ingame = Button(SCREEN_WIDTH/2 - 100, SCREEN_HEIGHT/2 + 90, 200, 50, "Exit Game", DARK_GRAY, PURPLE)
+        
         
         # Load gacha gun display images
         for gun_id, gun_info in GUN_DATA.items():
@@ -201,7 +228,6 @@ class Game:
                 img = pygame.image.load(gun_info['image_path']).convert_alpha()
                 self.gacha_gun_display_images[gun_id] = pygame.transform.scale(img, (100, 100)) # Larger scale for display
             except pygame.error:
-                print(f"Warning: Could not load gacha display image for {gun_id}: {gun_info['image_path']}")
                 self.gacha_gun_display_images[gun_id] = pygame.Surface((100, 100), pygame.SRCALPHA)
                 self.gacha_gun_display_images[gun_id].fill(GRAY)
 
@@ -261,7 +287,6 @@ class Game:
         pygame.mixer.music.stop()
         pygame.mixer.music.load(LEVEL_MUSIC)
         pygame.mixer.music.play(-1)
-        print("DEBUG MUSIC: Started LEVEL_MUSIC.")
 
     def init_boss_fight(self):
         self.game_state = 'boss_fight'
@@ -291,7 +316,6 @@ class Game:
         pygame.mixer.music.stop()
         pygame.mixer.music.load(BOSS_THEME)
         pygame.mixer.music.play(-1)
-        print("DEBUG MUSIC: Started BOSS_THEME.")
 
     def draw_text(self, text, size, x, y, color=WHITE, align="center"):
         font = pygame.font.Font(PIXEL_FONT, size)
@@ -301,9 +325,20 @@ class Game:
 
     def _play_sfx(self, sfx_name, loops=0):
         if self.sfx.get(sfx_name):
-            self.sfx[sfx_name].play(loops)
+            sfx_object = self.sfx[sfx_name]
+            channel = pygame.mixer.find_channel(True) # Find an unused channel, or stop one if all are busy
+            if channel:
+                channel.set_volume(self.volume) # Ensure channel volume is set
+                channel.play(sfx_object, loops)
+            else:
+                pass
         # else: Removed debug print
             # print(f"DEBUG SFX: Warning: Sound '{sfx_name}' not found in sfx dictionary or is None.")
+
+    def start_screen_shake(self, duration, intensity):
+        self.screen_shake_duration = duration
+        self.screen_shake_intensity = intensity
+        self.screen_shake_start_time = pygame.time.get_ticks()
 
     def buy_gun_crate(self):
         crate_cost = 500
@@ -338,9 +373,9 @@ class Game:
                 self.save_game_data()
                 self.shop_screen.total_coins = self.total_coins # Explicitly update shop UI coins
             else:
-                print("No guns in the chosen tier.")
+                pass
         else:
-            print("Not enough coins to buy a crate.")
+            pass
 
     def handle_events(self):
         mouse_pos = pygame.mouse.get_pos()
@@ -379,6 +414,8 @@ class Game:
             if self.paused:
                 if self.resume_button.is_clicked(event, mouse_pos):
                     self.paused = False
+                elif self.settings_button_ingame.is_clicked(event, mouse_pos):
+                    self.game_state = 'settings_ingame'
                 elif self.main_menu_button.is_clicked(event, mouse_pos):
                     self.paused = False
                     # self.total_coins += self.player.coins # Removed
@@ -387,12 +424,68 @@ class Game:
                     pygame.mixer.music.stop()
                     pygame.mixer.music.load(THEME_MUSIC)
                     pygame.mixer.music.play(-1)
+                elif self.exit_button_ingame.is_clicked(event, mouse_pos):
+                    self.save_game_data()
+                    self.running = False
                 return # Don't process other events when paused
+            
+            if self.game_state == 'settings_ingame':
+                if self.back_button.is_clicked(event, mouse_pos):
+                    self.game_state = 'platformer' # To return to the paused state, we set it back to platformer and then pause it
+                    self.paused = True
+                
+                if self.volume_down_button.is_clicked(event, mouse_pos):
+                    self.volume = max(0.0, round(self.volume - 0.1, 1))
+                    self.apply_settings()
+                    self.save_game_data()
+
+                if self.volume_up_button.is_clicked(event, mouse_pos):
+                    self.volume = min(1.0, round(self.volume + 0.1, 1))
+                    self.apply_settings()
+                    self.save_game_data()
+                
+                if self.fullscreen_button.is_clicked(event, mouse_pos):
+                    self.fullscreen = not self.fullscreen
+                    self.apply_settings()
+                    self.save_game_data()
+                return # Exclusive event handling for this state
+
+            # Handle level_select_button click inside the loop
+            if self.game_state in ['platformer', 'boss_fight'] and self.level_select_button.is_clicked(event, mouse_pos):
+                self.save_game_data()
+                self.game_state = 'level_selection'
+                pygame.mixer.music.stop()
+                pygame.mixer.music.load(THEME_MUSIC)
+                pygame.mixer.music.play(-1)
+                return
+
+
+
 
 
             
             if self.game_state == 'victory':
                 if event.type == pygame.KEYDOWN or event.type == pygame.MOUSEBUTTONDOWN: 
+                    # Clear all sprite groups before transitioning to level selection
+                    self.all_sprites.empty()
+                    self.platforms.empty()
+                    self.moving_platforms.empty()
+                    self.coins.empty()
+                    self.enemies.empty()
+                    self.projectiles.empty()
+                    self.enemy_projectiles.empty()
+                    self.boss_projectiles.empty()
+                    self.boss_group.empty()
+                    self.boss_gate_group.empty()
+                    self.power_up_boxes.empty()
+                    self.power_ups.empty()
+
+                    self.player = None # Explicitly remove player reference
+                    self.boss = None   # Explicitly remove boss reference
+                    self.camera_x = 0  # Reset camera position
+                    self.screen_shake_duration = 0 # Reset screen shake
+                    self.screen_shake_intensity = 0
+
                     self.game_state = 'level_selection'
                     pygame.mixer.music.stop()
                     pygame.mixer.music.load(THEME_MUSIC)
@@ -410,6 +503,9 @@ class Game:
                 elif self.benchmark_button.is_clicked(event, mouse_pos):
                     print("Launching Benchmark Runner...")
                     subprocess.Popen([sys.executable, "benchmark_runner.py"])
+                    # Explicitly quit mixer if it's initialized, to prevent resource leaks/issues
+                    if pygame.mixer.get_init():
+                        pygame.mixer.quit()
             elif self.game_state == 'level_selection':
                 if self.back_button.is_clicked(event, mouse_pos): 
                     self.game_state = 'home_screen'
@@ -505,16 +601,6 @@ class Game:
         if self.paused:
             return
 
-        # DEBUG MIXER: Check mixer status more robustly
-        if self._mixer_was_initialized and not pygame.mixer.get_init():
-            print("CRITICAL DEBUG MIXER: pygame.mixer became uninitialized! Sound lost.")
-            self._mixer_was_initialized = False # Mark as uninitialized
-
-        if pygame.mixer.get_init(): # Only print if initialized to avoid spamming the error
-            print(f"DEBUG MIXER: Mixer initialized: {pygame.mixer.get_init()}, Channels: {pygame.mixer.get_num_channels()}, Busy: {pygame.mixer.get_busy()} Music Busy: {pygame.mixer.music.get_busy()}")
-        else:
-            print("DEBUG MIXER: Mixer is NOT initialized. Cannot query status.")
-
         # Player death check moved inside gameplay state condition
         if self.game_state in ['platformer', 'boss_fight']:
             if self.player and self.player.health <= 0:
@@ -543,20 +629,24 @@ class Game:
         # Only proceed with player updates if in a gameplay state AND player exists
         if not self.player and self.game_state in ['platformer', 'boss_fight']:
             # This case should ideally not happen if init_level is called correctly
-            print("Warning: Player is None in gameplay state, attempting to re-initialize.")
             self.player = Player(0, 0, self, upgrades=self.upgrades, character_id=self.selected_character, equipped_gun_id=self.equipped_gun_id, upgrades_data=self.upgrades)
             self.all_sprites.add(self.player)
 
 
         if self.game_state == 'platformer':
             self.moving_platforms.update()
-            self.enemies.update(self.player, self.all_sprites, self.enemy_projectiles)
+            self.enemies.update(self.player, self.all_sprites, self.enemy_projectiles, self.platforms)
             self.enemy_projectiles.update(self.platforms)
             self.power_ups.update()
+            self.boss_gate_group.update()
         elif self.game_state == 'boss_fight':
             # Update boss and boss projectiles
             if self.boss:
                 self.boss.update()
+
+            if self.game_state == 'victory':
+                pygame.mixer.music.stop()
+                
             self.boss_projectiles.update(self.platforms)
         elif self.game_state == 'gacha_animation': # Gacha animation handles its own state transition
             if pygame.time.get_ticks() - self.gacha_animation_timer > 3000: # 3 seconds
@@ -617,13 +707,13 @@ class Game:
             for power_up in hit_power_ups:
                 self.player.activate_power_up(power_up.power_up_type)
 
-            if pygame.sprite.spritecollide(self.player, self.enemies, False): 
+            if pygame.sprite.spritecollide(self.player, self.enemies, False, collide_hitbox): 
                 self.player.take_damage(10)
             if pygame.sprite.spritecollide(self.player, self.enemy_projectiles, True): 
                 self.player.take_damage(15)
 
             for proj in self.projectiles:
-                hit_enemies = pygame.sprite.spritecollide(proj, self.enemies, False)
+                hit_enemies = pygame.sprite.spritecollide(proj, self.enemies, False, lambda proj, enemy: proj.rect.colliderect(enemy.hitbox))
                 if hit_enemies:
                     proj.kill()
                     for enemy in hit_enemies:
@@ -633,9 +723,10 @@ class Game:
                 if hit_boxes:
                     proj.kill()
                     for box in hit_boxes:
-                        if box.take_damage(proj.damage): # If box is destroyed
+                        power_up_type = box.take_damage(proj.damage)
+                        if power_up_type: # If box is destroyed and returns a power-up type
                             # Spawn a PowerUp at the box's position
-                            power_up = PowerUp(box.rect.centerx, box.rect.centery, box.power_up_type)
+                            power_up = PowerUp(box.rect.centerx, box.rect.centery, power_up_type)
                             self.all_sprites.add(power_up)
                             self.power_ups.add(power_up)
                 
@@ -664,24 +755,9 @@ class Game:
             self.game_state = 'game_over'
 
         if self.boss and not self.boss.alive() and self.game_state == 'boss_fight':
-            self.game_state = 'victory'; # Removed self.total_coins += self.player.coins
-            pygame.mixer.music.stop()
-            if self.current_level == self.unlocked_levels and self.unlocked_levels < len(ALL_LEVELS): self.unlocked_levels += 1 # Moved before save
-            self.save_game_data() # Save game data on victory
-
-        # Ensure music keeps playing if in a gameplay state
-        if self.game_state == 'platformer' and not pygame.mixer.music.get_busy():
-            print("DEBUG MUSIC: LEVEL_MUSIC stopped unexpectedly. Restarting.")
-            pygame.mixer.music.load(LEVEL_MUSIC)
-            pygame.mixer.music.play(-1)
-        elif self.game_state == 'boss_fight' and not pygame.mixer.music.get_busy():
-            print("DEBUG MUSIC: BOSS_THEME stopped unexpectedly. Restarting.")
-            pygame.mixer.music.load(BOSS_THEME)
-            pygame.mixer.music.play(-1)
-
-            self._play_sfx('victory') # No need to check sfx.get() here, helper does it
-            if self.sfx.get('walk'): self.sfx['walk'].stop() # Keep check for stopping, as _play_sfx can't stop
-            self.walking_sound_playing = False
+            # Boss has died, but we need to wait for falling/explosion animation
+            # The boss's update method will handle the transition to 'victory' after explosion
+            pass # No direct game_state change here, handled by boss.update()
 
     def update_camera(self):
         # Simple camera that keeps the player in the middle of the screen
@@ -693,6 +769,21 @@ class Game:
         
         # Clamp camera position to level boundaries
         self.camera_x = max(0, min(target_camera_x, level_width - SCREEN_WIDTH))
+
+        # Apply screen shake
+        if pygame.time.get_ticks() < self.screen_shake_start_time + self.screen_shake_duration:
+            shake_x = random.randint(-self.screen_shake_intensity, self.screen_shake_intensity)
+            shake_y = random.randint(-self.screen_shake_intensity, self.screen_shake_intensity)
+            self.camera_x += shake_x
+            # For a 2D platformer, shake_y might apply to all rendered objects or just the camera_y if implemented
+            # For simplicity, we'll only shake camera_x for now, or apply it directly to blitting for y-axis
+                # The current setup only modifies self.camera_x, so let's adjust the effective camera_x during drawing
+            # The current setup only modifies self.camera_x, so let's adjust the effective camera_x during drawing
+        else:
+            self.screen_shake_duration = 0 # Reset shake
+            self.screen_shake_intensity = 0
+
+        self.parallax.update(self.camera_x)
 
     def draw_boss_health_bar(self):
         if self.boss:
@@ -712,9 +803,23 @@ class Game:
             self.draw_text("BOSS HEALTH", 18, SCREEN_WIDTH / 2, y + bar_height / 2, WHITE)
 
     def draw(self):
-        mouse_pos = pygame.mouse.get_pos()
-        current_bg = self.boss_bg_image if self.game_state in ['boss_fight', 'victory'] else self.bg_image
-        self.screen.blit(current_bg, (0, 0))
+        self.screen.fill(BLACK) # Clear screen at the beginning of each draw call
+        mouse_pos = pygame.mouse.get_pos() # Define mouse_pos here
+
+        effective_camera_x = self.camera_x
+        effective_camera_y = 0 # Assuming vertical camera is fixed for now
+
+        # Apply screen shake offsets to effective camera positions for drawing
+        if pygame.time.get_ticks() < self.screen_shake_start_time + self.screen_shake_duration:
+            shake_x = random.randint(-self.screen_shake_intensity, self.screen_shake_intensity)
+            shake_y = random.randint(-self.screen_shake_intensity, self.screen_shake_intensity)
+            effective_camera_x += shake_x
+            effective_camera_y += shake_y
+
+        if self.game_state == 'home_screen':
+            self.screen.blit(self.menu_bg_image, (0, 0))
+        else:
+            self.parallax.draw(self.screen)
 
         if self.game_state == 'home_screen':
             self.draw_text("Spoonhead", 60, SCREEN_WIDTH/2, SCREEN_HEIGHT/4, GOLD)
@@ -735,7 +840,19 @@ class Game:
             self.fullscreen_button.text = "Mode: Fullscreen" if self.fullscreen else "Mode: Windowed"
             self.fullscreen_button.draw(self.screen, mouse_pos)
             self.back_button.draw(self.screen, mouse_pos)
+        elif self.game_state == 'settings_ingame':
+            self.draw_text("Settings", 60, SCREEN_WIDTH/2, 100, GOLD)
+            
+            self.draw_text(f"Volume: {int(self.volume * 100)}%", 40, SCREEN_WIDTH/2, 225, WHITE)
+            self.volume_down_button.draw(self.screen, mouse_pos)
+            self.volume_up_button.draw(self.screen, mouse_pos)
+            
+            # Update text based on state
+            self.fullscreen_button.text = "Mode: Fullscreen" if self.fullscreen else "Mode: Windowed"
+            self.fullscreen_button.draw(self.screen, mouse_pos)
+            self.back_button.draw(self.screen, mouse_pos)
         elif self.game_state == 'level_selection':
+            self.screen.blit(self.menu_bg_image, (0, 0))
             self.draw_text("Select Level", 40, SCREEN_WIDTH/2, 80, GOLD)
             self.draw_text(f"Total Coins: {self.total_coins}", 20, SCREEN_WIDTH/2, 140, GOLD)
 
@@ -765,7 +882,14 @@ class Game:
                 pygame.draw.rect(self.screen, (50, 50, 50), thumb_rect)
                 self.draw_text(str(level_num), 50, thumb_rect.centerx, thumb_rect.centery, border_color)
 
-                self.draw_text(level_data['name'], 14, card_rect.centerx, card_rect.y + 180, WHITE)
+                # self.draw_text(level_data['name'], 14, card_rect.centerx, card_rect.y + 180, WHITE)
+                # Split level name and draw on two lines
+                level_name_parts = level_data['name'].split(' ', 1)
+                if len(level_name_parts) > 1:
+                    self.draw_text(level_name_parts[0], 20, card_rect.centerx, card_rect.y + 165, WHITE)
+                    self.draw_text(level_name_parts[1], 20, card_rect.centerx, card_rect.y + 195, WHITE)
+                else:
+                    self.draw_text(level_data['name'], 20, card_rect.centerx, card_rect.y + 180, WHITE)
 
                 if not is_unlocked:
                     lock_overlay = pygame.Surface((card_width, card_height), pygame.SRCALPHA)
@@ -822,38 +946,27 @@ class Game:
                     self.draw_text(f"Refunded {500 // 2} coins", 20, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 220, YELLOW)
                 else:
                     self.draw_text("New Gun Unlocked!", 40, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 180, GREEN)
-        elif self.game_state == 'settings': # NEW BLOCK
-            self.draw_text("Settings", 40, SCREEN_WIDTH / 2, 80, GOLD)
-
-            # Volume controls
-            self.draw_text(f"Volume: {int(self.volume * 100)}%", 25, SCREEN_WIDTH / 2, 225)
-            self.volume_down_button.draw(self.screen, mouse_pos)
-            self.volume_up_button.draw(self.screen, mouse_pos)
-
-            # Fullscreen toggle
-            self.fullscreen_button.draw(self.screen, mouse_pos)
-            self.draw_text(f"Fullscreen: {'On' if self.fullscreen else 'Off'}", 25, SCREEN_WIDTH / 2, 375)
-
-            self.back_button.draw(self.screen, mouse_pos) # Back button
-
-        elif self.game_state in ['platformer', 'boss_fight', 'victory', 'game_over']:
-            if self.game_state == 'platformer':
-                for sprite in self.all_sprites: self.screen.blit(sprite.image, (sprite.rect.x - self.camera_x, sprite.rect.y))
+        
+        elif self.game_state in ['platformer', 'boss_fight', 'victory', 'game_over', 'settings_ingame']:
+            # All sprites should be drawn with camera offset, including boss and its explosion
+            for sprite in self.all_sprites: 
+                # For explosion, we want it to be centered on the boss
+                offset_x = sprite.rect.x - effective_camera_x
+                offset_y = sprite.rect.y - effective_camera_y
                 
-                # DEBUG: Draw hitboxes
-                for enemy in self.enemies:
-                    pygame.draw.rect(self.screen, (255, 0, 0), enemy.rect.move(-self.camera_x, 0), 1)
-                for proj in self.projectiles:
-                    pygame.draw.rect(self.screen, (0, 255, 255), proj.rect.move(-self.camera_x, 0), 1)
+                # Special handling for explosion animation to be centered on death spot
+                if isinstance(sprite, Boss) and sprite.dying_state == 'exploding':
+                    # The explosion sprite might be larger, so we want its center to match the boss's center
+                    explosion_center_x = sprite.rect.centerx - effective_camera_x
+                    explosion_center_y = sprite.rect.centery - effective_camera_y
+                    explosion_rect = sprite.image.get_rect(center=(explosion_center_x, explosion_center_y))
+                    self.screen.blit(sprite.image, explosion_rect)
+                else:
+                    self.screen.blit(sprite.image, (offset_x, offset_y))
                 
-                # DEBUG: Draw player collision box
-                if self.player and self.player.alive():
-                    pygame.draw.rect(self.screen, (0, 255, 0), self.player.hitbox.move(-self.camera_x, 0), 2)
+            if self.game_state in ['platformer', 'boss_fight'] and self.player and self.player.alive(): self.draw_ui()
+            self.level_select_button.draw(self.screen, mouse_pos)
 
-            else: 
-                self.all_sprites.draw(self.screen)
-            
-            if self.player and self.player.alive(): self.draw_ui()
 
             if self.game_state == 'boss_fight':
                 self.draw_boss_health_bar()
@@ -873,6 +986,7 @@ class Game:
             self.screen.blit(overlay, (0, 0))
             self.draw_text("Paused", 60, SCREEN_WIDTH/2, SCREEN_HEIGHT/4, GOLD)
             self.resume_button.draw(self.screen, pygame.mouse.get_pos())
+            self.settings_button_ingame.draw(self.screen, pygame.mouse.get_pos())
             self.main_menu_button.draw(self.screen, pygame.mouse.get_pos())
 
         self.benchmark.draw(self.screen)
@@ -890,12 +1004,11 @@ class Game:
         self.draw_text(f"Health: {self.player.health}", 18, 120, 32) # Keep health bar info roughly where it is
         
         # Coins
-        # self.draw_text(f"Level Coins: {self.player.coins_collected_in_level}", 20, 10, 60, GOLD, align="topleft")
-        self.draw_text(f"Total Coins: {self.total_coins}", 20, 10, 90, GOLD, align="topleft") # Moved Total Coins up
+        self.draw_text(f"Total Coins: {self.total_coins}", 20, 10, 90, GOLD, align="topleft")
         
         # Current Weapon
         current_weapon_name = self.player.unlocked_weapons[self.player.current_weapon_index].replace('_', ' ').title()
-        self.draw_text(f"Weapon: {current_weapon_name}", 20, 10, 120, WHITE, align="topleft") # Aligned left, below Total Coins
+        self.draw_text(f"Weapon: {current_weapon_name}", 20, 10, 120, WHITE, align="topleft")
 
         # Ultimate Meter
         if self.player.ultimate_ready:
