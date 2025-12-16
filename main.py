@@ -337,6 +337,8 @@ class Game:
                     self.paused = False
                 elif self.main_menu_button.is_clicked(event, mouse_pos):
                     self.paused = False
+                    self.total_coins += self.player.coins
+                    self.save_game_data()
                     self.game_state = 'home_screen'
                     pygame.mixer.music.stop()
                     pygame.mixer.music.load(THEME_MUSIC)
@@ -451,6 +453,8 @@ class Game:
                 if self.sfx.get('walk'): self.sfx['walk'].stop()
                 self.walking_sound_playing = False
                 if self.death_sound: self.death_sound.play()
+                self.total_coins += self.player.coins
+                self.save_game_data()
                 self.game_state = 'game_over'
 
             # Check for player-boss collision damage
@@ -478,15 +482,13 @@ class Game:
         if self.game_state == 'platformer':
             self.moving_platforms.update()
             self.enemies.update(self.player, self.all_sprites, self.enemy_projectiles)
-            self.enemy_projectiles.update()
-            pygame.sprite.groupcollide(self.enemy_projectiles, self.platforms, True, False)
+            self.enemy_projectiles.update(self.platforms)
             self.power_ups.update()
         elif self.game_state == 'boss_fight':
             # Update boss and boss projectiles
             if self.boss:
                 self.boss.update()
-            self.boss_projectiles.update()
-            pygame.sprite.groupcollide(self.boss_projectiles, self.platforms, True, False)
+            self.boss_projectiles.update(self.platforms)
         elif self.game_state == 'gacha_animation': # Gacha animation handles its own state transition
             if pygame.time.get_ticks() - self.gacha_animation_timer > 3000: # 3 seconds
                 self.game_state = 'shop_screen'
@@ -591,6 +593,8 @@ class Game:
                 self.player.take_damage(25)
 
         if self.player.rect.top > SCREEN_HEIGHT + 200: 
+            self.total_coins += self.player.coins
+            self.save_game_data()
             self.game_state = 'game_over'
 
         if self.boss and not self.boss.alive() and self.game_state == 'boss_fight':

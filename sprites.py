@@ -663,9 +663,11 @@ class EnemyProjectile(pygame.sprite.Sprite):
         self.rect = self.image.get_rect(center=(x, y))
         self.vx, self.vy, self.lifetime = vx, vy, 180
 
-    def update(self):
+    def update(self, platforms):
         self.rect.move_ip(self.vx, self.vy); self.lifetime -= 1
         if self.lifetime <= 0 or not self.rect.colliderect(pygame.Rect(-100,-100,10000,SCREEN_HEIGHT+200)): self.kill()
+        if pygame.sprite.spritecollide(self, platforms, False):
+            self.kill()
 
 class BossProjectile(pygame.sprite.Sprite):
     def __init__(self, x, y, vx, vy):
@@ -673,9 +675,11 @@ class BossProjectile(pygame.sprite.Sprite):
         pygame.draw.circle(self.image, PINK, (8, 8), 8); pygame.draw.circle(self.image, PURPLE, (8, 8), 5)
         self.rect = self.image.get_rect(center=(x, y)); self.vx, self.vy = vx, vy
 
-    def update(self):
+    def update(self, platforms):
         self.rect.move_ip(self.vx, self.vy)
         if not self.rect.colliderect(pygame.Rect(-50,-50,SCREEN_WIDTH+100,SCREEN_HEIGHT+100)): self.kill()
+        if pygame.sprite.spritecollide(self, platforms, False):
+            self.kill()
 
 class Projectile(pygame.sprite.Sprite):
     animation_frames_right, animation_frames_left = [], []
