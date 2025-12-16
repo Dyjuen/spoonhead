@@ -782,9 +782,16 @@ class PowerUp(pygame.sprite.Sprite):
             self.image.fill(WHITE)
         pygame.draw.rect(self.image, BLACK, self.image.get_rect(), 2) # Border
 
+        # Add bobbing attributes
+        self.bob_offset = random.uniform(0, 2 * math.pi)
+        self.bob_range = 8  # More pronounced bob
+        self.original_y = y  # Store original Y for bobbing
+        self.bob_speed = 0.1 # Speed of bobbing
+
     def update(self):
-        # Optional: Add a bobbing or floating effect
-        pass
+        # Implement bobbing effect
+        self.bob_offset += self.bob_speed
+        self.rect.y = self.original_y + int(math.sin(self.bob_offset) * self.bob_range)
 
 class Boss(pygame.sprite.Sprite):
     def __init__(self, x, y, game, boss_type, health, speed, shoot_interval, phases):
