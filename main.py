@@ -15,8 +15,32 @@ from gun_data import GUN_DATA
 from inventory import InventoryScreen, TIER_COLORS # Import TIER_COLORS
 from benchmark import Benchmark
 from parallax import Parallax
+from gacha import play_gacha_animation
 
 SAVE_FILE = 'save.json'
+
+def get_scaled_size(original_size, max_size):
+    """
+    Calculates the new dimensions for an image to fit within a max_size box
+    while preserving the aspect ratio.
+    """
+    original_width, original_height = original_size
+    max_width, max_height = max_size
+
+    if original_width == 0 or original_height == 0:
+        return (0, 0)
+
+    aspect_ratio = original_width / original_height
+
+    # Calculate new dimensions based on aspect ratio
+    new_width = max_width
+    new_height = new_width / aspect_ratio
+    
+    if new_height > max_height:
+        new_height = max_height
+        new_width = new_height * aspect_ratio
+
+    return (int(new_width), int(new_height))
 
 def collide_hitbox(sprite1, sprite2):
     return sprite1.hitbox.colliderect(sprite2.hitbox)
@@ -43,8 +67,7 @@ class Game:
         self.paused = False
         self.walking_sound_playing = False
         self.u_pressed = False
-        self.gacha_result = None
-        self.gacha_animation_timer = 0
+        self._mixer_was_initialized = True # Assume initialized at start
         self.gacha_gun_display_images = {} # For displaying gun in gacha animation
         self._mixer_was_initialized = True # Assume initialized at start
 
@@ -226,11 +249,25 @@ class Game:
         for gun_id, gun_info in GUN_DATA.items():
             try:
                 img = pygame.image.load(gun_info['image_path']).convert_alpha()
-                self.gacha_gun_display_images[gun_id] = pygame.transform.scale(img, (100, 100)) # Larger scale for display
+                original_size = gun_info.get('size')
+                if original_size:
+                    scaled_size = get_scaled_size(original_size, (100, 100))
+                    self.gacha_gun_display_images[gun_id] = pygame.transform.scale(img, scaled_size)
+                else:
+                    # Fallback for guns without size info, scale to a default
+                    self.gacha_gun_display_images[gun_id] = pygame.transform.scale(img, (100, 100))
+
             except pygame.error:
-                self.gacha_gun_display_images[gun_id] = pygame.Surface((100, 100), pygame.SRCALPHA)
+                original_size = gun_info.get('size')
+                if original_size:
+                    scaled_size = get_scaled_size(original_size, (100, 100))
+                    self.gacha_gun_display_images[gun_id] = pygame.Surface(scaled_size, pygame.SRCALPHA)
+                else:
+                    self.gacha_gun_display_images[gun_id] = pygame.Surface((100, 100), pygame.SRCALPHA)
+                
                 self.gacha_gun_display_images[gun_id].fill(GRAY)
 
+        self.gacha_font = pygame.font.Font(PIXEL_FONT, 30)
 
     def init_level(self, level_number):
         self.current_level = level_number
@@ -344,6 +381,7 @@ class Game:
         crate_cost = 500
         if self.total_coins >= crate_cost:
             self.total_coins -= crate_cost
+            pygame.mixer.music.pause()
 
             rarity_weights = { 'Common': 0.6, 'Rare': 0.25, 'Epic': 0.1, 'Legendary': 0.05 }
             guns_by_tier = {tier: [] for tier in rarity_weights}
@@ -354,6 +392,7 @@ class Game:
             
             if guns_by_tier[chosen_tier]:
                 unlocked_gun_id = random.choice(guns_by_tier[chosen_tier])
+                gun_data = GUN_DATA[unlocked_gun_id]
                 
                 is_duplicate = unlocked_gun_id in self.unlocked_guns
                 if is_duplicate:
@@ -362,19 +401,24 @@ class Game:
                 else:
                     self.unlocked_guns.append(unlocked_gun_id)
 
-                self.gacha_result = {
+                gacha_result = {
                     'gun_id': unlocked_gun_id,
                     'is_duplicate': is_duplicate,
-                    'tier': chosen_tier
+                    'tier': chosen_tier,
+                    'name': gun_data['name']
                 }
-                self.game_state = 'gacha_animation'
-                self.gacha_animation_timer = pygame.time.get_ticks()
+
+                # Call the new blocking animation function
+                play_gacha_animation(self.screen, gacha_result, self.gacha_gun_display_images, self.gacha_font)
+
+                # After animation, update game state
                 self.inventory_screen.update_data(self.selected_character, self.unlocked_guns, self.equipped_gun_id, self.unlocked_characters)
                 self.save_game_data()
                 self.shop_screen.total_coins = self.total_coins # Explicitly update shop UI coins
-            else:
-                pass
+            
+            pygame.mixer.music.unpause()
         else:
+            # Not enough coins
             pass
 
     def handle_events(self):
@@ -416,6 +460,7 @@ class Game:
                     self.paused = False
                 elif self.settings_button_ingame.is_clicked(event, mouse_pos):
                     self.game_state = 'settings_ingame'
+                    self.paused = False
                 elif self.main_menu_button.is_clicked(event, mouse_pos):
                     self.paused = False
                     # self.total_coins += self.player.coins # Removed
@@ -620,7 +665,7 @@ class Game:
 
         # This return statement needs to be conditional on the current game state
         # It was originally intended to stop updates in menu states, but it was too broad.
-        if self.game_state not in ['platformer', 'boss_fight', 'gacha_animation']: # Only update player-related stuff in gameplay states
+        if self.game_state not in ['platformer', 'boss_fight']: # Only update player-related stuff in gameplay states
             if self.walking_sound_playing:
                 self.sfx['walk'].stop()
                 self.walking_sound_playing = False
@@ -648,11 +693,6 @@ class Game:
                 pygame.mixer.music.stop()
                 
             self.boss_projectiles.update(self.platforms)
-        elif self.game_state == 'gacha_animation': # Gacha animation handles its own state transition
-            if pygame.time.get_ticks() - self.gacha_animation_timer > 3000: # 3 seconds
-                self.game_state = 'shop_screen'
-                self.gacha_result = None
-            return # Don't run player update logic during gacha animation
 
         actions = self.controller.get_actions()
 
@@ -905,47 +945,6 @@ class Game:
             self.back_button.draw(self.screen, mouse_pos)
         elif self.game_state == 'inventory':
             self.inventory_screen.draw()
-        elif self.game_state == 'gacha_animation':
-            self.screen.fill(BLACK)
-            if self.gacha_result:
-                gun_id = self.gacha_result['gun_id']
-                gun_data = GUN_DATA[gun_id]
-                
-                # Tier color
-                tier_color = WHITE
-                if self.gacha_result['tier'] == 'Rare':
-                    tier_color = BLUE
-                elif self.gacha_result['tier'] == 'Epic':
-                    tier_color = PURPLE
-                elif self.gacha_result['tier'] == 'Legendary':
-                    tier_color = GOLD
-
-                # Gun Image with scaling animation
-                animation_time = pygame.time.get_ticks() - self.gacha_animation_timer
-                scale_factor = min(1.0, animation_time / 1500) # Grow over 1.5 seconds
-                current_gun_image = self.gacha_gun_display_images[gun_id]
-                
-                scaled_width = int(current_gun_image.get_width() * scale_factor)
-                scaled_height = int(current_gun_image.get_height() * scale_factor)
-                
-                if scaled_width > 0 and scaled_height > 0:
-                    display_gun_image = pygame.transform.scale(current_gun_image, (scaled_width, scaled_height))
-                    gun_rect = display_gun_image.get_rect(center=(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 150))
-                    self.screen.blit(display_gun_image, gun_rect)
-
-                    # Draw tier border around the gun
-                    border_size = 5
-                    pygame.draw.rect(self.screen, tier_color, gun_rect.inflate(border_size * 2, border_size * 2), border_size, border_radius=10)
-
-
-                self.draw_text(gun_data['name'], 50, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 50, tier_color)
-                self.draw_text(f"({self.gacha_result['tier']})", 30, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 100, tier_color)
-
-                if self.gacha_result['is_duplicate']:
-                    self.draw_text("Duplicate!", 40, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 180, RED)
-                    self.draw_text(f"Refunded {500 // 2} coins", 20, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 220, YELLOW)
-                else:
-                    self.draw_text("New Gun Unlocked!", 40, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 180, GREEN)
         
         elif self.game_state in ['platformer', 'boss_fight', 'victory', 'game_over', 'settings_ingame']:
             # All sprites should be drawn with camera offset, including boss and its explosion

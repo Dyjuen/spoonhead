@@ -4,6 +4,29 @@ from settings import *
 from sprites import SpriteSheet
 import random
 
+def get_scaled_size(original_size, max_size):
+    """
+    Calculates the new dimensions for an image to fit within a max_size box
+    while preserving the aspect ratio.
+    """
+    original_width, original_height = original_size
+    max_width, max_height = max_size
+
+    if original_width == 0 or original_height == 0:
+        return (0, 0)
+
+    aspect_ratio = original_width / original_height
+
+    # Calculate new dimensions based on aspect ratio
+    new_width = max_width
+    new_height = new_width / aspect_ratio
+    
+    if new_height > max_height:
+        new_height = max_height
+        new_width = new_height * aspect_ratio
+
+    return (int(new_width), int(new_height))
+
 TIER_COLORS = {
     "Common": GRAY,
     "Rare": BLUE,
@@ -70,12 +93,20 @@ class InventoryScreen:
 
     def _load_gun_images(self):
         images = {}
+        max_size = (80, 80) # Bounding box for gun images in inventory
         for gun_id, gun_data in self.gun_data.items():
             try:
                 img = pygame.image.load(gun_data['image_path']).convert_alpha()
-                images[gun_id] = pygame.transform.scale(img, (60, 60))
+                original_size = gun_data.get('size', (img.get_width(), img.get_height()))
+                
+                scaled_size = get_scaled_size(original_size, max_size)
+                images[gun_id] = pygame.transform.scale(img, scaled_size)
+
             except pygame.error:
-                img = pygame.Surface((60, 60), pygame.SRCALPHA)
+                original_size = gun_data.get('size', max_size)
+                scaled_size = get_scaled_size(original_size, max_size)
+                
+                img = pygame.Surface(scaled_size, pygame.SRCALPHA)
                 img.fill(GRAY)
                 images[gun_id] = img
         return images
@@ -173,7 +204,8 @@ class InventoryScreen:
             
             # Image
             gun_img = self.gun_images[gun_id]
-            self.screen.blit(gun_img, (gun_rect.centerx - 30, gun_rect.y + 10))
+            img_rect = gun_img.get_rect(center=(gun_rect.centerx, gun_rect.y + 40)) # Center in the top part
+            self.screen.blit(gun_img, img_rect)
 
             # Name
             self.draw_text(gun_data['name'], 8, gun_rect.centerx, gun_rect.y + 85, WHITE)

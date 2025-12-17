@@ -143,7 +143,7 @@ LEVEL_2 = {
         "y": 350,
         "health": 350,      # Reduced from 500
         "speed": 5,         # Reduced from 4
-        "shoot_interval": 200,
+        "shoot_interval": 400,
         "phases": 1,        # Reduced from 2
     },
     "boss_gate_x": 7800,

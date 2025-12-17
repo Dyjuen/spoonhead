@@ -6,6 +6,29 @@ import time
 from settings import *
 from level_data import ALL_LEVELS
 
+def get_scaled_size(original_size, max_size):
+    """
+    Calculates the new dimensions for an image to fit within a max_size box
+    while preserving the aspect ratio.
+    """
+    original_width, original_height = original_size
+    max_width, max_height = max_size
+
+    if original_width == 0 or original_height == 0:
+        return (0, 0)
+
+    aspect_ratio = original_width / original_height
+
+    # Calculate new dimensions based on aspect ratio
+    new_width = max_width
+    new_height = new_width / aspect_ratio
+    
+    if new_height > max_height:
+        new_height = max_height
+        new_width = new_height * aspect_ratio
+
+    return (int(new_width), int(new_height))
+
 class SpriteSheet:
     """Utility for loading and parsing sprite sheets."""
     def __init__(self, filename):
@@ -73,12 +96,11 @@ class Player(pygame.sprite.Sprite):
         self.last_frame_update = pygame.time.get_ticks()
         self.idle_timer = 0
         self.is_emoting = False
-        self.is_emote_playing = False # New line
         self.emote_cooldown = random.randint(5000, 10000)
 
         # Emote & Double Jump Specifics
         self.idle_timer_start = pygame.time.get_ticks()
-        self.idle_duration_threshold = random.randint(5000, 10000) # 5 to 10 seconds
+        self.idle_duration_threshold = random.randint(3000, 5000) # 3 to 5 seconds
         self.current_emote_frames = []
         self.current_emote_frame_index = 0
         self.emote_start_time = 0
@@ -127,9 +149,18 @@ class Player(pygame.sprite.Sprite):
         try:
             # For non-animated guns, just load a single image
             self.gun_image = pygame.image.load(gun_path).convert_alpha()
-            self.gun_image = pygame.transform.scale(self.gun_image, (15, 15)) # Example scale
+            original_size = gun_info.get('size', (self.gun_image.get_width(), self.gun_image.get_height()))
+            
+            # Apply a uniform scaling factor
+            scale_factor = 0.6
+            scaled_size = (max(1, int(original_size[0] * scale_factor)), max(1, int(original_size[1] * scale_factor)))
+            self.gun_image = pygame.transform.scale(self.gun_image, scaled_size)
         except pygame.error:
-            self.gun_image = pygame.Surface((15, 15), pygame.SRCALPHA)
+            # Fallback if image fails to load
+            scale_factor = 0.4
+            original_fallback_size = gun_info.get('size', (40, 40))
+            scaled_size = (max(1, int(original_fallback_size[0] * scale_factor)), max(1, int(original_fallback_size[1] * scale_factor)))
+            self.gun_image = pygame.Surface(scaled_size, pygame.SRCALPHA)
             self.gun_image.fill(GRAY)
         
         # Load bullet image for the gun
@@ -210,7 +241,7 @@ class Player(pygame.sprite.Sprite):
 
 
     def switch_weapon(self):
-        if self.is_emote_playing: return
+        if self.is_emoting: return
         self.current_weapon_index = (self.current_weapon_index + 1) % len(self.unlocked_weapons)
 
     def load_animations(self):
@@ -289,14 +320,19 @@ class Player(pygame.sprite.Sprite):
         # Load emote animations
         self.emote_animations = {}
         if 'emotes' in self.character_data:
+            print(f"Loading emotes for {self.character_id}...")
             for emote_path in self.character_data['emotes']:
                 emote_name = os.path.splitext(os.path.basename(emote_path))[0].lower() # Extract name from path
                 try:
                     img = pygame.image.load(emote_path).convert_alpha()
                     scaled_img = pygame.transform.scale(img, player_size)
                     self.emote_animations[emote_name] = [scaled_img] # Use name as key
+                    print(f"  Loaded emote: {emote_name}")
                 except (pygame.error, FileNotFoundError):
+                    print(f"  Failed to load emote: {emote_path}")
                     pass
+        if not self.emote_animations:
+            print(f"No emotes loaded for {self.character_id}.")
 
     def animate(self):
         now = pygame.time.get_ticks()
@@ -306,13 +342,17 @@ class Player(pygame.sprite.Sprite):
 
         if self.is_emoting:
             # Emote animation
-            # self.action holds the key for the current emote (e.g., 'emote_angry')
-            current_emote_animation = self.emote_animations.get(self.action, [pygame.Surface((60, 60), pygame.SRCALPHA)])
+            current_emote_animation = self.current_emote_frames # Use the already selected frames
             
             if now - self.emote_start_time > self.emote_animation_speed:
                 self.emote_start_time = now
-                self.current_emote_frame_index = (self.current_emote_frame_index + 1) % len(current_emote_animation)
-            
+                self.current_emote_frame_index += 1
+                if self.current_emote_frame_index >= len(current_emote_animation):
+                    # Emote animation finished
+                    self.is_emoting = False
+                    self.set_action('idle') # Return to idle
+                    self.current_emote_frame_index = 0 # Reset for next emote
+                
             body_frame = current_emote_animation[self.current_emote_frame_index]
             # No hand or gun when emoting, so hand_frame remains None
             
@@ -374,7 +414,8 @@ class Player(pygame.sprite.Sprite):
             self.frame_index = 0
             self.last_frame_update = pygame.time.get_ticks() # Reset timer on action change
             if self.action.startswith('emote'):
-                self.is_emoting = True # Keep this for idle timer logic
+                self.is_emoting = True
+                self.current_emote_frame_index = 0 # Reset emote frame index when starting a new emote
             else:
                 self.is_emoting = False # Reset this if not emoting
 
@@ -395,7 +436,7 @@ class Player(pygame.sprite.Sprite):
                     self.emote_start_time = now
                     # Reset idle timer for next potential emote
                     self.idle_timer_start = now
-                    self.idle_duration_threshold = random.randint(5000, 10000)
+                    self.idle_duration_threshold = random.randint(3000, 5000)
         # If player moves, jumps, or shoots, stop emoting
         elif self.is_emoting and (
             (move_input is not None and (move_input < 0.4 or move_input > 0.6)) # Movement
@@ -405,13 +446,13 @@ class Player(pygame.sprite.Sprite):
             self.is_emoting = False
             self.set_action('idle') # Return to idle animation
             self.idle_timer_start = now # Reset timer
-            self.idle_duration_threshold = random.randint(5000, 10000)
+            self.idle_duration_threshold = random.randint(3000, 5000)
         # Reset idle timer if not idle or emoting has stopped naturally
         if not self.is_emoting and (self.action != 'idle' or not self.on_ground or (move_input is not None and (move_input < 0.4 or move_input > 0.6))):
             self.idle_timer_start = now
-            self.idle_duration_threshold = random.randint(5000, 10000)
+            self.idle_duration_threshold = random.randint(3000, 5000)
 
-        if self.is_emote_playing:
+        if self.is_emoting:
             self.vx = 0 # No horizontal movement during emote
             # No action change based on movement during emote
         else: # Only process movement and action changes if not emoting
@@ -488,7 +529,7 @@ class Player(pygame.sprite.Sprite):
         return sfx_events
 
     def jump(self):
-        if self.is_emote_playing: return None
+        if self.is_emoting: return None
         if self.jumps_left > 0 and not self.is_emoting:
             self.vy = self.jump_power
             self.on_ground = False
@@ -505,13 +546,13 @@ class Player(pygame.sprite.Sprite):
         return None
 
     def dash(self):
-        if self.is_emote_playing: return
+        if self.is_emoting: return
         current_time = pygame.time.get_ticks()
         if not self.dashing and current_time - self.last_dash > self.dash_cooldown and not self.is_emoting:
             self.dashing = True; self.dash_timer = current_time; self.last_dash = current_time
 
     def shoot(self, shoot_direction='horizontal'):
-        if self.is_emote_playing: return None, None
+        if self.is_emoting: return None, None
         current_time = pygame.time.get_ticks()
         if current_time - self.last_shot > self.shoot_cooldown and not self.is_emoting:
             self.last_shot = current_time
@@ -593,7 +634,7 @@ class Player(pygame.sprite.Sprite):
             self.apply_buff()
 
     def activate_ultimate(self):
-        if self.is_emote_playing: return None
+        if self.is_emoting: return None
         if self.ultimate_ready:
             self.ultimate_meter = 0
             self.ultimate_ready = False
