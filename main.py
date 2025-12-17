@@ -4,15 +4,16 @@ import json
 import random
 import subprocess
 import sys
+import math
 from settings import *
 from controller import ControllerManager
-from sprites import Player, Boss, Projectile, BossProjectile, Platform, MovingPlatform, Coin, Enemy, BossGate, PowerUpBox, PowerUp, EnemyProjectile
+from sprites import Player, Boss, Projectile, BossProjectile, Platform, MovingPlatform, Coin, Enemy, BossGate, PowerUpBox, PowerUp, EnemyProjectile, Explosion
 from ui import Button
 from level_data import ALL_LEVELS
 from shop_data import SHOP_ITEMS
 from shop import ShopScreen
 from gun_data import GUN_DATA
-from inventory import InventoryScreen, TIER_COLORS # Import TIER_COLORS
+from inventory import InventoryScreen, TIER_COLORS
 from benchmark import Benchmark
 from parallax import Parallax
 from gacha import play_gacha_animation
@@ -42,6 +43,7 @@ def get_scaled_size(original_size, max_size):
 
     return (int(new_width), int(new_height))
 
+
 def collide_hitbox(sprite1, sprite2):
     return sprite1.hitbox.colliderect(sprite2.hitbox)
 
@@ -56,7 +58,7 @@ class Game:
         Projectile.load_images()
         pygame.display.set_caption("Spoonhead")
         self.clock = pygame.time.Clock()
-        self.running = True # Initialize self.running
+        self.running = True 
         self.game_state = 'home_screen'
         self.blink_timer = 0
         self.show_start_text = True
@@ -67,8 +69,7 @@ class Game:
         self.paused = False
         self.walking_sound_playing = False
         self.u_pressed = False
-        self._mixer_was_initialized = True # Assume initialized at start
-        self.gacha_gun_display_images = {} # For displaying gun in gacha animation
+        self.gacha_gun_display_images = {}
         self._mixer_was_initialized = True # Assume initialized at start
 
         self.screen_shake_duration = 0
@@ -78,22 +79,22 @@ class Game:
         self.unlocked_levels = 1
         self.total_coins = 0
         self.upgrades = {item_id: 0 for item_id in SHOP_ITEMS}
-        self.current_level = 1 # Change from 0 to 1
+        self.current_level = 1 
         
         # Multiplayer Data
         self.controller_manager = ControllerManager()
-        self.connected_players = [0] # List of active player indices (0 for P1, 1 for P2)
+        self.connected_players = [0] 
         
         self.unlocked_characters = ['cyborg'] 
-        self.selected_characters = {0: 'cyborg', 1: 'biker'} # Default for P1 and P2
+        self.selected_characters = {0: 'cyborg', 1: 'biker'} 
         self.unlocked_guns = ['pistol_1'] 
-        self.equipped_guns = {0: 'pistol_1', 1: 'pistol_1'} # Default for P1 and P2
+        self.equipped_guns = {0: 'pistol_1', 1: 'pistol_1'} 
         
         self.load_game_data()
 
         self.camera_x = 0
-        self.players = [] # List to hold Player objects
-        self.player = None # Keep for backward compatibility/single player logic ease
+        self.players = [] 
+        self.player = None 
         
         self.all_sprites = pygame.sprite.Group()
         self.platforms = pygame.sprite.Group()
@@ -224,7 +225,11 @@ class Game:
                 'landing': pygame.mixer.Sound(LANDING_SOUND),
                 'coin': pygame.mixer.Sound(COIN_SOUND),
                 'victory': pygame.mixer.Sound(VICTORY_SOUND),
-                'explosion': pygame.mixer.Sound("assets/audio/burst.mp3"), # Placeholder for explosion sound
+                'explosion': pygame.mixer.Sound("assets/audio/explosion.mp3"), # Actual explosion sound
+                'punk_ultimate1': pygame.mixer.Sound("assets/audio/punk_ultimate1.mp3"), # Punk ultimate shot
+                'cyborg_ultimate': pygame.mixer.Sound("assets/audio/cyborg_ultimate.mp3"), # Cyborg ultimate
+                'biker_ultimate': pygame.mixer.Sound("assets/audio/biker_ultimate.mp3"), # Biker ultimate
+                'generic_ultimate': pygame.mixer.Sound("assets/audio/burst.mp3"), # Generic ultimate (use burst)
             }
             self.death_sound = self.sfx['death'] # Keep separate reference for existing logic
         except pygame.error as e:
@@ -257,114 +262,16 @@ class Game:
         self.exit_button_ingame = Button(SCREEN_WIDTH/2 - 100, SCREEN_HEIGHT/2 + 90, 200, 50, "Exit Game", DARK_GRAY, PURPLE)
         
         
-        # Load gacha gun display images
+        # Load gacha font and gun display images
+        self.gacha_font = pygame.font.Font(PIXEL_FONT, 30)
         for gun_id, gun_info in GUN_DATA.items():
             try:
                 img = pygame.image.load(gun_info['image_path']).convert_alpha()
-                original_size = gun_info.get('size')
-                if original_size:
-                    scaled_size = get_scaled_size(original_size, (100, 100))
-                    self.gacha_gun_display_images[gun_id] = pygame.transform.scale(img, scaled_size)
-                else:
-                    # Fallback for guns without size info, scale to a default
-                    self.gacha_gun_display_images[gun_id] = pygame.transform.scale(img, (100, 100))
-
+                self.gacha_gun_display_images[gun_id] = pygame.transform.scale(img, (100, 100)) # Larger scale for display
             except pygame.error:
-                original_size = gun_info.get('size')
-                if original_size:
-                    scaled_size = get_scaled_size(original_size, (100, 100))
-                    self.gacha_gun_display_images[gun_id] = pygame.Surface(scaled_size, pygame.SRCALPHA)
-                else:
-                    self.gacha_gun_display_images[gun_id] = pygame.Surface((100, 100), pygame.SRCALPHA)
-                
+                self.gacha_gun_display_images[gun_id] = pygame.Surface((100, 100), pygame.SRCALPHA)
                 self.gacha_gun_display_images[gun_id].fill(GRAY)
 
-        self.gacha_font = pygame.font.Font(PIXEL_FONT, 30)
-
-    def init_level(self, level_number):
-        self.current_level = level_number
-        level_data = ALL_LEVELS[level_number]
-        
-        # Sprite Groups
-        self.all_sprites = pygame.sprite.Group()
-        self.platforms = pygame.sprite.Group()
-        self.moving_platforms = pygame.sprite.Group()
-        self.coins = pygame.sprite.Group()
-        self.enemies = pygame.sprite.Group()
-        self.projectiles = pygame.sprite.Group()
-        self.enemy_projectiles = pygame.sprite.Group()
-        self.boss_projectiles = pygame.sprite.Group()
-        self.boss_group = pygame.sprite.Group()
-        self.boss_gate_group = pygame.sprite.Group()
-        self.power_up_boxes = pygame.sprite.Group()
-        self.power_ups = pygame.sprite.Group()
-        
-        # Player
-        self.player = Player(100, 400, self, upgrades=self.upgrades, character_id=self.selected_character, equipped_gun_id=self.equipped_gun_id, upgrades_data=self.upgrades)
-        
-        # Level Objects
-        for p_data in level_data["platforms"]:
-            self.platforms.add(Platform(*p_data))
-        for p_data in level_data["moving_platforms"]:
-            p = MovingPlatform(*p_data)
-            self.platforms.add(p)
-            self.moving_platforms.add(p)
-        for c_data in level_data["coins"]:
-            self.coins.add(Coin(*c_data))
-        for e_data in level_data["enemies"]:
-            self.enemies.add(Enemy(player=self.player, **e_data))
-        for b_data in level_data.get("power_up_boxes", []):
-            self.power_up_boxes.add(PowerUpBox(*b_data))
-        
-        self.boss_gate = BossGate(level_data["boss_gate_x"], 460)
-        self.boss_gate_group.add(self.boss_gate)
-        
-        # Add all sprites to the main rendering group
-        self.all_sprites.add(
-            self.player, 
-            self.platforms, 
-            self.coins, 
-            self.enemies, 
-            self.power_up_boxes, 
-            self.boss_gate
-        )
-        
-        self.boss = None
-        self.game_state = 'platformer'
-        self.camera_x = 0
-        
-        pygame.mixer.music.stop()
-        pygame.mixer.music.load(LEVEL_MUSIC)
-        pygame.mixer.music.play(-1)
-
-    def init_boss_fight(self):
-        self.game_state = 'boss_fight'
-        level_data = ALL_LEVELS[self.current_level]
-        boss_data = level_data["boss"].copy()
-
-        # Remove conflicting positional arguments before unpacking
-        boss_data.pop('x', None)
-        boss_data.pop('y', None)
-
-        self.all_sprites.empty() # Clear all old sprites
-        self.platforms.empty(); self.coins.empty(); self.enemies.empty(); self.boss_gate_group.empty()
-        
-        self.player.rect.center = (200, 400)
-        self.player.hitbox.center = (200, 400)
-        self.player.vy = 0
-        self.player.on_ground = True
-        self.all_sprites.add(self.player)
-        self.camera_x = 0
-        
-        ground = Platform(0, 500, SCREEN_WIDTH, 40)
-        self.all_sprites.add(ground); self.platforms.add(ground)
-        
-        self.boss = Boss(x=SCREEN_WIDTH * 0.75, y=SCREEN_HEIGHT / 2, game=self, **boss_data)
-        self.all_sprites.add(self.boss); self.boss_group.add(self.boss)
-
-        pygame.mixer.music.stop()
-        pygame.mixer.music.load(BOSS_THEME)
-        pygame.mixer.music.play(-1)
 
     def draw_text(self, text, size, x, y, color=WHITE, align="center"):
         font = pygame.font.Font(PIXEL_FONT, size)
@@ -397,11 +304,11 @@ class Game:
                 guns_by_tier[gun_data['tier']].append(gun_id)
 
             chosen_tier = random.choices(list(rarity_weights.keys()), weights=list(rarity_weights.values()), k=1)[0]
-            
+
             if guns_by_tier[chosen_tier]:
                 unlocked_gun_id = random.choice(guns_by_tier[chosen_tier])
                 gun_data = GUN_DATA[unlocked_gun_id]
-                
+
                 is_duplicate = unlocked_gun_id in self.unlocked_guns
                 if is_duplicate:
                     refund = crate_cost // 2
@@ -420,18 +327,16 @@ class Game:
                 play_gacha_animation(self.screen, gacha_result, self.gacha_gun_display_images, self.gacha_font)
 
                 # After animation, update game state
-                self.inventory_screen.update_data(self.selected_character, self.unlocked_guns, self.equipped_gun_id, self.unlocked_characters)
+                self.inventory_screen.update_data(self.selected_characters, self.unlocked_guns, self.equipped_guns, self.unlocked_characters, self.connected_players)
                 self.save_game_data()
                 self.shop_screen.total_coins = self.total_coins # Explicitly update shop UI coins
-            
+
             pygame.mixer.music.unpause()
         else:
             # Not enough coins
             pass
 
     def handle_events(self):
-        mouse_pos = pygame.mouse.get_pos()
-        
         # Check for P2 join input anytime we are in menus where joining makes sense
         if self.game_state == 'level_selection':
             if 1 not in self.connected_players and self.controller_manager.has_p2_device():
@@ -440,63 +345,66 @@ class Game:
                     actions = p2_controller.get_actions()
                     if actions.get('join'):
                         self.connected_players.append(1)
-                        self._play_sfx('coin') 
+                        self._play_sfx('coin')
                         print("Player 2 Joined!")
 
         try:
             for event in pygame.event.get():
-                if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE): 
+                # Get mouse position for this event
+                mouse_pos = pygame.mouse.get_pos()
+
+                if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
                     self.save_game_data()
                     self.running = False
                     if pygame.mixer.get_init():
                         pygame.mixer.quit()
+                    return
 
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_p and self.game_state in ['platformer', 'boss_fight']:
                         self.paused = not self.paused
-                    
+
                     if event.key == pygame.K_F3:
                         self.benchmark.toggle()
 
-            if self.paused:
-                if self.resume_button.is_clicked(event, mouse_pos):
-                    self.paused = False
-                elif self.settings_button_ingame.is_clicked(event, mouse_pos):
-                    self.game_state = 'settings_ingame'
-                    self.paused = False
-                elif self.main_menu_button.is_clicked(event, mouse_pos):
-                    self.paused = False
-                    # self.total_coins += self.player.coins # Removed
-                    self.save_game_data()
-                    self.game_state = 'home_screen'
-                    pygame.mixer.music.stop()
-                    pygame.mixer.music.load(THEME_MUSIC)
-                    pygame.mixer.music.play(-1)
-                elif self.exit_button_ingame.is_clicked(event, mouse_pos):
-                    self.save_game_data()
-                    self.running = False
-                return # Don't process other events when paused
-            
-            if self.game_state == 'settings_ingame':
-                if self.back_button.is_clicked(event, mouse_pos):
-                    self.game_state = 'platformer' # To return to the paused state, we set it back to platformer and then pause it
-                    self.paused = True
-                
-                if self.volume_down_button.is_clicked(event, mouse_pos):
-                    self.volume = max(0.0, round(self.volume - 0.1, 1))
-                    self.apply_settings()
-                    self.save_game_data()
+                # If paused, handle only pause menu events
+                if self.paused:
+                    if self.resume_button.is_clicked(event, mouse_pos):
+                        self.paused = False
+                    elif self.settings_button_ingame.is_clicked(event, mouse_pos):
+                        self.game_state = 'settings_ingame'
+                        self.paused = False
+                    elif self.main_menu_button.is_clicked(event, mouse_pos):
+                        self.paused = False
+                        # self.total_coins += self.player.coins # Removed
+                        self.save_game_data()
+                        self.game_state = 'home_screen'
+                        pygame.mixer.music.stop()
+                        pygame.mixer.music.load(THEME_MUSIC)
+                        pygame.mixer.music.play(-1)
+                    elif self.exit_button_ingame.is_clicked(event, mouse_pos):
+                        self.save_game_data()
+                        self.running = False
+                    continue # Don't process other events when paused
 
-                    if self.volume_up_button.is_clicked(event, mouse_pos):
+                # Handle events based on current game state
+                if self.game_state == 'settings_ingame':
+                    if self.back_button.is_clicked(event, mouse_pos):
+                        self.game_state = 'platformer' # To return to the paused state, we set it back to platformer and then pause it
+                        self.paused = True
+
+                    if self.volume_down_button.is_clicked(event, mouse_pos):
+                        self.volume = max(0.0, round(self.volume - 0.1, 1))
+                        self.apply_settings()
+                        self.save_game_data()
+                    elif self.volume_up_button.is_clicked(event, mouse_pos):
                         self.volume = min(1.0, round(self.volume + 0.1, 1))
                         self.apply_settings()
                         self.save_game_data()
-                    
                     if self.fullscreen_button.is_clicked(event, mouse_pos):
                         self.fullscreen = not self.fullscreen
                         self.apply_settings()
                         self.save_game_data()
-                    return
 
                 if self.game_state in ['platformer', 'boss_fight'] and self.level_select_button.is_clicked(event, mouse_pos):
                     self.save_game_data()
@@ -504,10 +412,10 @@ class Game:
                     pygame.mixer.music.stop()
                     pygame.mixer.music.load(THEME_MUSIC)
                     pygame.mixer.music.play(-1)
-                    return
+                    continue
 
                 if self.game_state == 'victory':
-                    if event.type == pygame.KEYDOWN or event.type == pygame.MOUSEBUTTONDOWN: 
+                    if event.type == pygame.KEYDOWN or event.type == pygame.MOUSEBUTTONDOWN:
                         self.all_sprites.empty()
                         self.platforms.empty()
                         self.moving_platforms.empty()
@@ -521,7 +429,7 @@ class Game:
                         self.power_up_boxes.empty()
                         self.power_ups.empty()
 
-                        self.players = [] 
+                        self.players = []
                         self.player = None
                         self.boss = None
                         self.camera_x = 0
@@ -548,7 +456,7 @@ class Game:
                         if pygame.mixer.get_init():
                             pygame.mixer.quit()
                 elif self.game_state == 'level_selection':
-                    if self.back_button.is_clicked(event, mouse_pos): 
+                    if self.back_button.is_clicked(event, mouse_pos):
                         self.game_state = 'home_screen'
                     if self.shop_button.is_clicked(event, mouse_pos): self.game_state = 'shop_screen'
                     if self.inventory_button.is_clicked(event, mouse_pos): self.game_state = 'inventory'
@@ -560,7 +468,7 @@ class Game:
                                     self.init_level(card['id'])
                         elif event.button == 4: self.scroll_x -= 50
                         elif event.button == 5: self.scroll_x += 50
-                    
+
                     max_scroll_x = (len(ALL_LEVELS) - 1) * 260
                     self.scroll_x = max(0, min(self.scroll_x, max_scroll_x))
                 elif self.game_state == 'inventory':
@@ -579,7 +487,7 @@ class Game:
                             self.inventory_screen.update_data(self.selected_characters, self.unlocked_guns, self.equipped_guns, self.unlocked_characters, self.connected_players)
                 elif self.game_state == 'shop_screen':
                     if self.back_button.is_clicked(event, mouse_pos): self.game_state = 'level_selection'
-                    
+
                     result = self.shop_screen.handle_event(event)
                     if result == 'buy_crate':
                         self.buy_gun_crate()
@@ -596,7 +504,7 @@ class Game:
                                 if result in CHARACTER_DATA and result not in self.unlocked_characters:
                                     self.unlocked_characters.append(result)
                                     print(f"Character '{item_data['name']}' unlocked!")
-                                
+
                                 self.save_game_data()
                                 self.shop_screen.total_coins = self.total_coins
                                 self.shop_screen.upgrades = self.upgrades
@@ -608,12 +516,10 @@ class Game:
                         self.volume = max(0.0, round(self.volume - 0.1, 1))
                         self.apply_settings()
                         self.save_game_data()
-                    
-                    if self.volume_up_button.is_clicked(event, mouse_pos):
+                    elif self.volume_up_button.is_clicked(event, mouse_pos):
                         self.volume = min(1.0, round(self.volume + 0.1, 1))
                         self.apply_settings()
                         self.save_game_data()
-
                     if self.fullscreen_button.is_clicked(event, mouse_pos):
                         self.fullscreen = not self.fullscreen
                         self.apply_settings()
@@ -698,10 +604,40 @@ class Game:
         pygame.mixer.music.load(LEVEL_MUSIC)
         pygame.mixer.music.play(-1)
 
+    def init_boss_fight(self):
+        self.game_state = 'boss_fight'
+        level_data = ALL_LEVELS[self.current_level]
+        boss_data = level_data["boss"].copy()
+
+        # Remove conflicting positional arguments before unpacking
+        boss_data.pop('x', None)
+        boss_data.pop('y', None)
+
+        self.all_sprites.empty() # Clear all old sprites
+        self.platforms.empty(); self.coins.empty(); self.enemies.empty(); self.boss_gate_group.empty()
+
+        for player in self.players:
+            player.rect.center = (200, 400)
+            player.hitbox.center = (200, 400)
+            player.vy = 0
+            player.on_ground = True
+            self.all_sprites.add(player)
+        self.camera_x = 0
+
+        ground = Platform(0, 500, SCREEN_WIDTH, 40)
+        self.all_sprites.add(ground); self.platforms.add(ground)
+
+        self.boss = Boss(x=SCREEN_WIDTH * 0.75, y=SCREEN_HEIGHT / 2, game=self, **boss_data)
+        self.all_sprites.add(self.boss); self.boss_group.add(self.boss)
+
+        pygame.mixer.music.stop()
+        pygame.mixer.music.load(BOSS_THEME)
+        pygame.mixer.music.play(-1)
+
     def change_character(self, player_index, character_id):
         self.selected_characters[player_index] = character_id
-        self.inventory_screen.update_data(self.selected_characters, self.unlocked_guns, self.equipped_guns, self.unlocked_characters)
-        
+        self.inventory_screen.update_data(self.selected_characters, self.unlocked_guns, self.equipped_guns, self.unlocked_characters, self.connected_players)
+
         # If in level, restart level to apply changes
         if self.game_state in ['platformer', 'boss_fight']:
              self.init_level(self.current_level)
@@ -734,9 +670,7 @@ class Game:
                     p.take_damage(BOSS_COLLISION_DAMAGE)
 
 
-        # This return statement needs to be conditional on the current game state
-        # It was originally intended to stop updates in menu states, but it was too broad.
-        if self.game_state not in ['platformer', 'boss_fight']: # Only update player-related stuff in gameplay states
+        if self.game_state not in ['platformer', 'boss_fight']:
             if self.walking_sound_playing:
                 self.sfx['walk'].stop()
                 self.walking_sound_playing = False
@@ -764,15 +698,35 @@ class Game:
                 pygame.mixer.music.stop()
             self.boss_projectiles.update(self.platforms)
 
-        actions = self.controller.get_actions()
+        # Update each player
+        actions_list = []
+        # Update controller manager to check for new inputs/connections if needed
+                
+        for player in self.players:
+            if player.health <= 0:
+                player.kill() # Remove from sprites
+                continue
+                
+            # Get input for this player
+            if player.player_index == 0:
+                controller = self.controller_manager.get_p1_controller()
+            else:
+                controller = self.controller_manager.get_p2_controller()
+            
+            actions = controller.get_actions() if controller else {}
+            actions_list.append(actions)
 
-        if actions.get('dash'): self.player.dash()
-        if actions.get('shoot'):
-            projectiles, sfx_name = self.player.shoot(actions.get('shoot_direction', 'horizontal'))
-            if projectiles: 
-                self.all_sprites.add(projectiles); self.projectiles.add(projectiles)
-                if sfx_name: # No need to check sfx.get() here, helper does it
-                    self._play_sfx(sfx_name)
+            if actions.get('jump'):
+                sfx_to_play = player.jump()
+                if sfx_to_play:
+                    self._play_sfx(sfx_to_play)
+
+            if actions.get('dash'): player.dash()
+            if actions.get('shoot'):
+                projectiles, sfx_name = player.shoot(actions.get('shoot_direction', 'horizontal'))
+                if projectiles: 
+                    self.all_sprites.add(projectiles); self.projectiles.add(projectiles)
+                    if sfx_name: self._play_sfx(sfx_name)
 
             if actions.get('switch_weapon'):
                 player.switch_weapon()
@@ -840,7 +794,6 @@ class Game:
                     if self.current_level < len(ALL_LEVELS):
                         self.init_level(self.current_level + 1)
                     else:
-                        # Should normally be handled by boss gate type, but just in case
                         self.game_state = 'victory'
                     return
                 else:
@@ -863,27 +816,150 @@ class Game:
         for proj in self.projectiles:
             hit_enemies = pygame.sprite.spritecollide(proj, self.enemies, False, lambda proj, enemy: proj.rect.colliderect(enemy.hitbox))
             if hit_enemies:
-                proj.kill()
-                for enemy in hit_enemies:
-                    enemy.take_damage(proj.damage)
+                if proj.is_explosive:
+                    # Handle explosive projectile - damage all nearby enemies in an area
+                    explosion_radius = 80  # pixels
+                    explosion_center = proj.rect.center
+
+                    # Find all enemies in explosion radius
+                    for enemy in self.enemies:
+                        distance = math.sqrt((enemy.rect.centerx - explosion_center[0])**2 +
+                                           (enemy.rect.centery - explosion_center[1])**2)
+                        if distance <= explosion_radius:
+                            # Reduce damage based on distance (closer = more damage)
+                            distance_factor = max(0.3, 1.0 - distance/explosion_radius)  # 30% to 100% damage
+                            damage = int(proj.damage * distance_factor)
+                            enemy.take_damage(damage)
+
+                    # Also check for boss if in boss fight
+                    if self.game_state == 'boss_fight' and self.boss:
+                        distance = math.sqrt((self.boss.rect.centerx - explosion_center[0])**2 +
+                                           (self.boss.rect.centery - explosion_center[1])**2)
+                        if distance <= explosion_radius:
+                            distance_factor = max(0.3, 1.0 - distance/explosion_radius)
+                            damage = int(proj.damage * distance_factor)
+                            self.boss.take_damage(damage)
+
+                    # Create visual explosion effect
+                    explosion = Explosion(proj.rect.centerx, proj.rect.centery)
+                    self.all_sprites.add(explosion)
+                    # Play explosion sound
+                    self._play_sfx('explosion')
+                    proj.kill()
+                else:
+                    # Regular projectile behavior
+                    proj.kill()
+                    for enemy in hit_enemies:
+                        enemy.take_damage(proj.damage)
             
             hit_boxes = pygame.sprite.spritecollide(proj, self.power_up_boxes, False)
             if hit_boxes:
-                proj.kill()
-                for box in hit_boxes:
-                    power_up_type = box.take_damage(proj.damage)
-                    if power_up_type:
-                        power_up = PowerUp(box.rect.centerx, box.rect.centery, power_up_type)
-                        self.all_sprites.add(power_up)
-                        self.power_ups.add(power_up)
+                if proj.is_explosive:
+                    # Create explosion when explosive projectile hits a power-up box
+                    explosion_radius = 80
+                    explosion_center = proj.rect.center
+
+                    # Find all enemies in explosion radius
+                    for enemy in self.enemies:
+                        distance = math.sqrt((enemy.rect.centerx - explosion_center[0])**2 +
+                                           (enemy.rect.centery - explosion_center[1])**2)
+                        if distance <= explosion_radius:
+                            distance_factor = max(0.3, 1.0 - distance/explosion_radius)  # 30% to 100% damage
+                            damage = int(proj.damage * distance_factor)
+                            enemy.take_damage(damage)
+
+                    # Check boss in boss fight
+                    if self.game_state == 'boss_fight' and self.boss:
+                        distance = math.sqrt((self.boss.rect.centerx - explosion_center[0])**2 +
+                                           (self.boss.rect.centery - explosion_center[1])**2)
+                        if distance <= explosion_radius:
+                            distance_factor = max(0.3, 1.0 - distance/explosion_radius)
+                            damage = int(proj.damage * distance_factor)
+                            self.boss.take_damage(damage)
+
+                    # Break boxes and create power-ups
+                    # Create visual explosion effect
+                    explosion = Explosion(proj.rect.centerx, proj.rect.centery)
+                    self.all_sprites.add(explosion)
+                    proj.kill()
+                    for box in hit_boxes:
+                        power_up_type = box.take_damage(proj.damage)
+                        if power_up_type:
+                            power_up = PowerUp(box.rect.centerx, box.rect.centery, power_up_type)
+                            self.all_sprites.add(power_up)
+                            self.power_ups.add(power_up)
+
+                    # Play explosion sound
+                    self._play_sfx('explosion')
+                else:
+                    proj.kill()
+                    for box in hit_boxes:
+                        power_up_type = box.take_damage(proj.damage)
+                        if power_up_type:
+                            power_up = PowerUp(box.rect.centerx, box.rect.centery, power_up_type)
+                            self.all_sprites.add(power_up)
+                            self.power_ups.add(power_up)
             
             if pygame.sprite.spritecollide(proj, self.platforms, False):
-                proj.kill()
+                if proj.is_explosive:
+                    # Create explosion when explosive projectile hits a platform
+                    explosion_radius = 80
+                    explosion_center = proj.rect.center
+
+                    # Find all enemies in explosion radius
+                    for enemy in self.enemies:
+                        distance = math.sqrt((enemy.rect.centerx - explosion_center[0])**2 +
+                                           (enemy.rect.centery - explosion_center[1])**2)
+                        if distance <= explosion_radius:
+                            distance_factor = max(0.3, 1.0 - distance/explosion_radius)  # 30% to 100% damage
+                            damage = int(proj.damage * distance_factor)
+                            enemy.take_damage(damage)
+
+                    # Check boss in boss fight
+                    if self.game_state == 'boss_fight' and self.boss:
+                        distance = math.sqrt((self.boss.rect.centerx - explosion_center[0])**2 +
+                                           (self.boss.rect.centery - explosion_center[1])**2)
+                        if distance <= explosion_radius:
+                            distance_factor = max(0.3, 1.0 - distance/explosion_radius)
+                            damage = int(proj.damage * distance_factor)
+                            self.boss.take_damage(damage)
+
+                    # Create visual explosion effect
+                    explosion = Explosion(proj.rect.centerx, proj.rect.centery)
+                    self.all_sprites.add(explosion)
+                    # Play explosion sound
+                    self._play_sfx('explosion')
+                    proj.kill()
+                else:
+                    # Regular projectile behavior
+                    proj.kill()
 
         if self.game_state == 'boss_fight' and self.boss:
-            hits = pygame.sprite.spritecollide(self.boss, self.projectiles, True)
+            hits = pygame.sprite.spritecollide(self.boss, self.projectiles, False)  # Don't remove on collision check
             for hit in hits:
-                self.boss.take_damage(hit.damage)
+                if hit.is_explosive:
+                    # Remove explosive projectile and handle explosion
+                    hit.kill()
+                    explosion_radius = 80
+                    explosion_center = hit.rect.center
+
+                    # Damage boss with distance-based damage
+                    distance = math.sqrt((self.boss.rect.centerx - explosion_center[0])**2 +
+                                       (self.boss.rect.centery - explosion_center[1])**2)
+                    if distance <= explosion_radius:
+                        distance_factor = max(0.3, 1.0 - distance/explosion_radius)
+                        damage = int(hit.damage * distance_factor)
+                        self.boss.take_damage(damage)
+
+                    # Create visual explosion effect
+                    explosion = Explosion(hit.rect.centerx, hit.rect.centery)
+                    self.all_sprites.add(explosion)
+                    # Play explosion sound
+                    self._play_sfx('explosion')
+                else:
+                    # Regular projectile behavior
+                    hit.kill()
+                    self.boss.take_damage(hit.damage)
             if not self.boss.alive():
                 pass # Handled by boss update
 
@@ -897,10 +973,52 @@ class Game:
             return
 
         avg_x = sum(p.rect.centerx for p in alive_players) / len(alive_players)
-        
-        level_width = self.boss_gate.rect.right + 100 
-        target_camera_x = avg_x - SCREEN_WIDTH / 2
-        self.camera_x = max(0, min(target_camera_x, level_width - SCREEN_WIDTH))
+
+        # Different camera behavior for boss fight
+        if self.game_state == 'boss_fight':
+            # In boss fights, keep the camera focused on the boss arena
+            # Boss arena is generally around the middle-right of the screen
+            if self.boss:
+                # Target the center between player and boss
+                boss_center_x = self.boss.rect.centerx
+                level_center = SCREEN_WIDTH * 0.75  # Boss starts at 75% of screen width
+
+                # Keep camera between boss and player but constrained to boss area
+                target_camera_x = avg_x - SCREEN_WIDTH / 2
+
+                # Define boss arena boundaries
+                boss_arena_left = max(0, boss_center_x - SCREEN_WIDTH * 0.7)
+                boss_arena_right = max(SCREEN_WIDTH * 0.5, boss_center_x + SCREEN_WIDTH * 0.3)
+
+                # Constrain camera to boss arena
+                target_camera_x = max(boss_arena_left, min(target_camera_x, boss_arena_right - SCREEN_WIDTH))
+            else:
+                # If no boss, use standard tracking
+                level_width = self.boss_gate.rect.right + 100
+                target_camera_x = avg_x - SCREEN_WIDTH / 2
+                target_camera_x = max(0, min(target_camera_x, level_width - SCREEN_WIDTH))
+        else:
+            # Standard level tracking
+            level_width = self.boss_gate.rect.right + 100
+            target_camera_x = avg_x - SCREEN_WIDTH / 2
+            target_camera_x = max(0, min(target_camera_x, level_width - SCREEN_WIDTH))
+
+        # Implement smooth camera following to prevent flickering
+        # Instead of instantly snapping to target, move gradually towards it
+        camera_smooth_speed = 0.1  # Adjust this value to control smoothness (0.05-0.2)
+        self.camera_x = self.camera_x * (1 - camera_smooth_speed) + target_camera_x * camera_smooth_speed
+
+        # Ensure camera doesn't go beyond level boundaries (double check bounds after smoothing)
+        if self.game_state != 'boss_fight':
+            level_width = self.boss_gate.rect.right + 100
+            self.camera_x = max(0, min(self.camera_x, level_width - SCREEN_WIDTH))
+        else:
+            # For boss fights, ensure it stays within calculated bounds
+            if self.boss:
+                boss_center_x = self.boss.rect.centerx
+                boss_arena_left = max(0, boss_center_x - SCREEN_WIDTH * 0.7)
+                boss_arena_right = max(SCREEN_WIDTH * 0.5, boss_center_x + SCREEN_WIDTH * 0.3)
+                self.camera_x = max(boss_arena_left, min(self.camera_x, boss_arena_right - SCREEN_WIDTH))
 
         if pygame.time.get_ticks() < self.screen_shake_start_time + self.screen_shake_duration:
             shake_x = random.randint(-self.screen_shake_intensity, self.screen_shake_intensity)
@@ -1105,7 +1223,7 @@ class Game:
         
         # Shared Coins (Only draw once or for both?) Draw for P1 for now or top center
         if idx == 0:
-            self.draw_text(f"Coins: {self.total_coins}", 20, 10, 90, GOLD, align="topleft")
+            self.draw_text(f"Coins: {self.total_coins}", 20, 10, 90, align="topleft", color=GOLD) # Adjusted for kwargs
         
         # Weapon
         current_weapon_name = player.unlocked_weapons[player.current_weapon_index].replace('_', ' ').title()

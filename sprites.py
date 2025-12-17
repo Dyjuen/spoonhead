@@ -582,7 +582,7 @@ class Player(pygame.sprite.Sprite):
                     
                     vx = 12 * math.cos(rad_angle)
                     vy = 12 * math.sin(rad_angle)
-                    projectiles.add(Projectile(self.rect.centerx, self.rect.centery, vx, vy, damage=damage))
+                    projectiles.add(Projectile(self.rect.centerx, self.rect.centery, vx, vy, damage=damage, player=self))
                 return projectiles, sfx_name
 
             # Default shot
@@ -590,23 +590,23 @@ class Player(pygame.sprite.Sprite):
             sqrt2_half = 0.7071 # Approximation of sin(45) and cos(45)
 
             if shoot_direction == 'up':
-                projectiles.add(Projectile(self.rect.centerx, self.rect.centery, 0, -speed, damage=damage))
+                projectiles.add(Projectile(self.rect.centerx, self.rect.centery, 0, -speed, damage=damage, player=self))
             elif shoot_direction == 'down':
-                projectiles.add(Projectile(self.rect.centerx, self.rect.centery, 0, speed, damage=damage))
+                projectiles.add(Projectile(self.rect.centerx, self.rect.centery, 0, speed, damage=damage, player=self))
             elif shoot_direction == 'up_right':
-                projectiles.add(Projectile(self.rect.centerx, self.rect.centery, speed * sqrt2_half, -speed * sqrt2_half, damage=damage))
+                projectiles.add(Projectile(self.rect.centerx, self.rect.centery, speed * sqrt2_half, -speed * sqrt2_half, damage=damage, player=self))
             elif shoot_direction == 'up_left':
-                projectiles.add(Projectile(self.rect.centerx, self.rect.centery, -speed * sqrt2_half, -speed * sqrt2_half, damage=damage))
+                projectiles.add(Projectile(self.rect.centerx, self.rect.centery, -speed * sqrt2_half, -speed * sqrt2_half, damage=damage, player=self))
             elif shoot_direction == 'down_right':
-                projectiles.add(Projectile(self.rect.centerx, self.rect.centery, speed * sqrt2_half, speed * sqrt2_half, damage=damage))
+                projectiles.add(Projectile(self.rect.centerx, self.rect.centery, speed * sqrt2_half, speed * sqrt2_half, damage=damage, player=self))
             elif shoot_direction == 'down_left':
-                projectiles.add(Projectile(self.rect.centerx, self.rect.centery, -speed * sqrt2_half, speed * sqrt2_half, damage=damage))
+                projectiles.add(Projectile(self.rect.centerx, self.rect.centery, -speed * sqrt2_half, speed * sqrt2_half, damage=damage, player=self))
             elif shoot_direction == 'left':
-                 projectiles.add(Projectile(self.rect.centerx, self.rect.centery, -speed, 0, damage=damage))
+                 projectiles.add(Projectile(self.rect.centerx, self.rect.centery, -speed, 0, damage=damage, player=self))
             elif shoot_direction == 'right':
-                 projectiles.add(Projectile(self.rect.centerx, self.rect.centery, speed, 0, damage=damage))
+                 projectiles.add(Projectile(self.rect.centerx, self.rect.centery, speed, 0, damage=damage, player=self))
             else: # horizontal
-                projectiles.add(Projectile(self.rect.centerx, self.rect.centery, speed * direction, 0, damage=damage))
+                projectiles.add(Projectile(self.rect.centerx, self.rect.centery, speed * direction, 0, damage=damage, player=self))
             
             return projectiles, sfx_name
         return None, None
@@ -625,6 +625,7 @@ class Player(pygame.sprite.Sprite):
                 self.health = self.max_health
 
     def increase_ultimate_meter(self):
+        # Increase ultimate meter by 1 when killing enemies
         if not self.ultimate_ready:
             self.ultimate_meter += 1
             if self.ultimate_meter >= self.ultimate_max_meter:
@@ -643,36 +644,48 @@ class Player(pygame.sprite.Sprite):
             
             if self.character_id == 'cyborg':
                 # Giant Laser
-                proj = Projectile(self.rect.centerx, self.rect.centery, 20 * direction, 0, damage=100)
-                proj.image = pygame.transform.scale(proj.image, (80, 40)) 
+                proj = Projectile(self.rect.centerx, self.rect.centery, 20 * direction, 0, damage=100, player=self)
+                proj.image = pygame.transform.scale(proj.image, (80, 40))
                 proj.rect = proj.image.get_rect(center=proj.rect.center)
+                # Cyborg ultimate SFX
+                if hasattr(self.game, '_play_sfx'):
+                    self.game._play_sfx('cyborg_ultimate')
                 return proj
                 
             elif self.character_id == 'biker':
                 # Spread Burst (Shotgun blast)
                 projectiles = pygame.sprite.Group()
-                for angle in range(-20, 21, 10): 
+                for angle in range(-20, 21, 10):
                     rad = math.radians(angle)
                     if direction == -1: rad = math.pi - rad # Adjust for left facing
-                    
+
                     vx = 18 * math.cos(rad)
                     vy = 18 * math.sin(rad)
-                    p = Projectile(self.rect.centerx, self.rect.centery, vx, vy, damage=25)
+                    p = Projectile(self.rect.centerx, self.rect.centery, vx, vy, damage=25, player=self)
                     projectiles.add(p)
+                # Biker ultimate SFX
+                if hasattr(self.game, '_play_sfx'):
+                    self.game._play_sfx('biker_ultimate')
                 return projectiles
                 
             elif self.character_id == 'punk':
-                # Punk Bomb (Slow moving, huge damage)
-                proj = Projectile(self.rect.centerx, self.rect.centery, 8 * direction, 0, damage=150)
+                # Punk Bomb (Slow moving, huge damage that explodes on impact)
+                proj = Projectile(self.rect.centerx, self.rect.centery, 8 * direction, 0, damage=150, player=self, is_explosive=True)
                 size = 60
                 proj.image = pygame.Surface((size, size), pygame.SRCALPHA)
                 pygame.draw.circle(proj.image, ORANGE, (size//2, size//2), size//2)
                 pygame.draw.circle(proj.image, YELLOW, (size//2, size//2), size//2 - 5)
                 proj.rect = proj.image.get_rect(center=self.rect.center)
+                # Punk ultimate SFX
+                if hasattr(self.game, '_play_sfx'):
+                    self.game._play_sfx('punk_ultimate1')
                 return proj
-            
+
             # Fallback
-            return Projectile(self.rect.centerx, self.rect.centery, 15 * direction, 0, damage=50)
+            proj = Projectile(self.rect.centerx, self.rect.centery, 15 * direction, 0, damage=50, player=self)
+            if hasattr(self.game, '_play_sfx'):
+                self.game._play_sfx('generic_ultimate')
+            return proj
         return None
 
 
@@ -840,7 +853,7 @@ class Projectile(pygame.sprite.Sprite):
             surf = pygame.Surface(bullet_size, pygame.SRCALPHA); surf.fill(YELLOW)
             Projectile.animation_frames_right = [surf]*2; Projectile.animation_frames_left = [surf]*2
 
-    def __init__(self, x, y, vx, vy, damage=10):
+    def __init__(self, x, y, vx, vy, damage=10, player=None, is_explosive=False):
         super().__init__()
         direction = 1 if vx >= 0 else -1
         self.anim_frames = Projectile.animation_frames_right if direction == 1 else Projectile.animation_frames_left
@@ -848,6 +861,8 @@ class Projectile(pygame.sprite.Sprite):
         self.image = self.anim_frames[self.frame_index]; self.rect = self.image.get_rect(center=(x, y))
         self.vx, self.vy = vx, vy
         self.damage = damage
+        self.player = player  # Store reference to player who fired the projectile
+        self.is_explosive = is_explosive  # Whether this projectile explodes on impact
 
     def update(self):
         if pygame.time.get_ticks() - self.last_frame_update > 100:
@@ -855,6 +870,46 @@ class Projectile(pygame.sprite.Sprite):
             self.frame_index = (self.frame_index + 1) % len(self.anim_frames); self.image = self.anim_frames[self.frame_index]
         self.rect.move_ip(self.vx, self.vy)
         if not self.rect.colliderect(pygame.Rect(-100,-100,10000,SCREEN_HEIGHT+200)): self.kill()
+
+class Explosion(pygame.sprite.Sprite):
+    """Explosion effect for explosive projectiles like the punk's ultimate"""
+    def __init__(self, x, y):
+        super().__init__()
+        import math
+        from settings import BOSS_EXPLOSION_SPRITE_PATH, ORANGE
+        self.explosion_frames = []
+        explosion_size = (128, 128)  # Same size as boss explosion
+
+        # Load explosion animation
+        try:
+            sheet = SpriteSheet(BOSS_EXPLOSION_SPRITE_PATH)
+            frames = sheet.get_animation_frames(64, 52)  # Use same frame dimensions as boss
+            self.explosion_frames = [pygame.transform.scale(frame, explosion_size) for frame in frames]
+        except (pygame.error, FileNotFoundError):
+            # Fallback to colored surface
+            placeholder_frame = pygame.Surface(explosion_size, pygame.SRCALPHA)
+            pygame.draw.circle(placeholder_frame, ORANGE, (64, 64), 64)
+            pygame.draw.circle(placeholder_frame, (255, 100, 0), (64, 64), 50)  # Inner orange
+            self.explosion_frames = [placeholder_frame] * 8
+
+        self.frame_index = 0
+        self.image = self.explosion_frames[0]
+        self.rect = self.image.get_rect(center=(x, y))
+        self.animation_speed = 30  # ms per frame (fast for explosion)
+        self.last_frame_update = pygame.time.get_ticks()
+
+    def update(self):
+        # Animate explosion
+        now = pygame.time.get_ticks()
+        if now - self.last_frame_update > self.animation_speed:
+            self.last_frame_update = now
+            self.frame_index += 1
+
+            if self.frame_index >= len(self.explosion_frames):
+                # Animation finished, remove explosion
+                self.kill()
+            else:
+                self.image = self.explosion_frames[self.frame_index]
 
 class Platform(pygame.sprite.Sprite):
     def __init__(self, x, y, width, height):

@@ -68,7 +68,7 @@ GUN_DATA = {
         'size': (6, 5),
     },
     'pistol_10': {
-        'name': 'Golden Gun',
+        'name': 'Blue Boy',
         'tier': 'Rare',
         'image_path': 'assets/Guns/Pistols/Guns/10_1.png',
         'bullet_path': 'assets/Guns/Pistols/5 Bullets/10.png',

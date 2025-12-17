@@ -24,6 +24,12 @@ class Button:
 
     def is_clicked(self, event, mouse_pos):
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            print(f"DEBUG BUTTON: Click detected on '{self.text}'")
+            print(f"DEBUG BUTTON: Button Rect: {self.rect}")
+            print(f"DEBUG BUTTON: Mouse Position: {mouse_pos}")
             if self.rect.collidepoint(mouse_pos):
+                print(f"DEBUG BUTTON: Collision detected for '{self.text}'!")
                 return True
+            else:
+                print(f"DEBUG BUTTON: NO collision for '{self.text}'. Mouse not on button.")
         return False

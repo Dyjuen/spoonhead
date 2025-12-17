@@ -24,7 +24,7 @@ class Parallax:
                 'x': 0
             })
         
-        # Reverse the layers so that layer 5 is drawn first (furthest)
+        
         self.layers.reverse()
 
     def scale_image(self, image):
@@ -43,13 +43,10 @@ class Parallax:
             image_width = image.get_width()
             x = layer['x'] % image_width
 
-            # Draw the first image
             screen.blit(image, (x, 0))
 
-            # Draw a second image to the left for seamless scrolling
             if x > 0:
                 screen.blit(image, (x - image_width, 0))
 
-            # Draw a second image to the right for seamless scrolling
             if x < self.screen_width:
                  screen.blit(image, (x + image_width, 0))
