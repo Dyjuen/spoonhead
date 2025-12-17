@@ -151,6 +151,7 @@ LEVEL_2 = {
 
 LEVEL_3 = {
     "name": "Crystal Core",
+    "gate_type": "boss",
     "platforms": [
         (0, 550, 150, 40), (250, 550, 150, 40), # Small starting ground
         (800, 500, 100, 25), (1000, 450, 100, 25), (1200, 400, 100, 25),
@@ -218,9 +219,94 @@ LEVEL_3 = {
     "boss_gate_x": 8800,
 }
 
+LEVEL_4 = {
+    "name": "Sky Fortress",
+    "gate_type": "next_level", # Transitions to Level 5
+    "platforms": [
+        (0, 550, 200, 40), # Start
+        (300, 500, 100, 25), (500, 450, 100, 25), (700, 400, 100, 25),
+        (900, 350, 100, 25), (1100, 300, 100, 25), (1300, 250, 100, 25),
+        (1600, 550, 200, 40), # Checkpoint 1
+        (1900, 450, 50, 25), (2000, 350, 50, 25), (2100, 250, 50, 25), # Tiny steps
+        (2300, 200, 200, 40),
+        (2600, 300, 100, 25), (2800, 400, 100, 25), (3000, 500, 100, 25),
+        (3300, 550, 300, 40), # Checkpoint 2
+        (3700, 450, 100, 25), (3900, 350, 100, 25), (4100, 250, 100, 25),
+        (4400, 550, 500, 40), # End area
+    ],
+    "moving_platforms": [
+        (150, 400, 80, 20, 'y', 300, 3),
+        (800, 200, 80, 20, 'x', 400, 4),
+        (2200, 400, 80, 20, 'y', 200, -4),
+        (3200, 300, 80, 20, 'x', 300, 5),
+        (4000, 200, 80, 20, 'y', 300, 6),
+    ],
+    "coins": [
+        (350, 450), (550, 400), (750, 350), (950, 300),
+        (1950, 400), (2050, 300),
+        (2700, 250), (2900, 350),
+        (3800, 400), (4000, 300),
+    ],
+    "enemies": [
+        { "x": 1650, "y": 500, "patrol_distance": 50, "speed": 3, "shoot_cooldown": 1.5 },
+        { "x": 2350, "y": 150, "patrol_distance": 50, "speed": 4, "shoot_cooldown": 1.0 },
+        { "x": 3400, "y": 500, "patrol_distance": 100, "speed": 5, "shoot_cooldown": 0.8 },
+        { "x": 4500, "y": 500, "patrol_distance": 150, "speed": 4, "shoot_cooldown": 1.2 },
+    ],
+    "boss": { # Placeholder, effectively skipped by gate_type logic
+        "boss_type": 1,
+        "x": 0, "y": 0, "health": 1, "speed": 0, "shoot_interval": 9999, "phases": 1
+    },
+    "boss_gate_x": 4800,
+}
+
+LEVEL_5 = {
+    "name": "Void Dimension",
+    "gate_type": "boss", # Transitions to Boss Fight
+    "platforms": [
+        (0, 550, 200, 40),
+        (300, 550, 50, 25), (450, 500, 50, 25), (600, 450, 50, 25),
+        (750, 400, 50, 25), (900, 350, 50, 25), (1050, 300, 50, 25),
+        (1300, 550, 300, 40),
+        (1700, 450, 100, 25), (1900, 350, 100, 25), (2100, 250, 100, 25),
+        (2400, 550, 400, 40),
+        (2900, 500, 50, 25), (3050, 450, 50, 25), (3200, 400, 50, 25),
+        (3350, 350, 50, 25), (3500, 300, 50, 25), (3650, 250, 50, 25),
+        (4000, 550, 500, 40), # Boss Arena Pre-chamber
+    ],
+    "moving_platforms": [
+        (500, 200, 80, 20, 'x', 500, 6), # Very fast horizontal
+        (1500, 300, 80, 20, 'y', 200, 5),
+        (2500, 200, 80, 20, 'x', 400, -6),
+        (3500, 500, 80, 20, 'y', 300, 7),
+    ],
+    "coins": [
+        (325, 500), (475, 450), (625, 400),
+        (1750, 400), (1950, 300),
+        (2950, 450), (3100, 400), (3250, 350),
+    ],
+    "enemies": [
+        { "x": 1400, "y": 500, "patrol_distance": 100, "speed": 5, "shoot_cooldown": 0.8 },
+        { "x": 2500, "y": 500, "patrol_distance": 150, "speed": 6, "shoot_cooldown": 0.6 },
+        { "x": 4100, "y": 500, "patrol_distance": 100, "speed": 7, "shoot_cooldown": 0.5 },
+    ],
+    "boss": {
+        "boss_type": 3, # Reusing Boss 3 stats but maybe buffed in main.py logic or here
+        "x": 4200,
+        "y": 300,
+        "health": 1000, # Harder
+        "speed": 8,
+        "shoot_interval": 100,
+        "phases": 3,
+    },
+    "boss_gate_x": 4400,
+}
+
 
 ALL_LEVELS = {
     1: LEVEL_1,
     2: LEVEL_2,
-    3: LEVEL_3
+    3: LEVEL_3,
+    4: LEVEL_4,
+    5: LEVEL_5
 }

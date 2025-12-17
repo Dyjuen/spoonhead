@@ -35,22 +35,24 @@ TIER_COLORS = {
 }
 
 class InventoryScreen:
-    def __init__(self, screen, selected_character_id, unlocked_guns, gun_data, character_data, equipped_gun_id, unlocked_characters):
+    def __init__(self, screen, selected_characters, unlocked_guns, gun_data, character_data, equipped_guns, unlocked_characters, connected_players=[0]):
         self.screen = screen
-        self.selected_character_id = selected_character_id
+        self.selected_characters = selected_characters # Dict: {0: 'id', 1: 'id'}
         self.unlocked_guns = unlocked_guns
         self.gun_data = gun_data
         self.character_data = character_data
-        self.equipped_gun_id = equipped_gun_id
+        self.equipped_guns = equipped_guns # Dict: {0: 'id', 1: 'id'}
         
         self.font = pygame.font.Font(PIXEL_FONT, 24)
         self.item_font = pygame.font.Font(PIXEL_FONT, 16)
         self.tier_font = pygame.font.Font(PIXEL_FONT, 12)
 
         self.back_button = Button(20, 20, 150, 50, "Back", RED, PURPLE)
+        self.player_toggle_button = Button(SCREEN_WIDTH - 170, 20, 150, 50, "Edit: P1", GREEN, DARK_GRAY)
 
-        # Unlocked characters should be passed from Game, not hardcoded here
-        self.unlocked_characters = unlocked_characters # Now a parameter
+        self.unlocked_characters = unlocked_characters
+        self.connected_players = connected_players
+        self.active_player_idx = 0
         
         # Load images
         self.character_animations = self._load_character_animations()
@@ -118,11 +120,22 @@ class InventoryScreen:
         pygame.draw.circle(icon, BLACK, (15, 28), 5)
         return icon
 
-    def update_data(self, selected_character_id, unlocked_guns, equipped_gun_id, unlocked_characters):
-        self.selected_character_id = selected_character_id
+    def update_data(self, selected_characters, unlocked_guns, equipped_guns, unlocked_characters, connected_players):
+        self.selected_characters = selected_characters
         self.unlocked_guns = unlocked_guns
-        self.equipped_gun_id = equipped_gun_id
-        self.unlocked_characters = unlocked_characters # Update unlocked characters
+        self.equipped_guns = equipped_guns
+        self.unlocked_characters = unlocked_characters
+        self.connected_players = connected_players
+        # Ensure active player is valid
+        if self.active_player_idx not in self.connected_players:
+            self.active_player_idx = self.connected_players[0]
+        
+        # Update button text/color
+        self._update_toggle_button()
+
+    def _update_toggle_button(self):
+        self.player_toggle_button.text = f"Edit: P{self.active_player_idx + 1}"
+        self.player_toggle_button.bg_color = GREEN if self.active_player_idx == 0 else BLUE
 
     def draw(self):
         self.screen.fill(DARK_GRAY)
@@ -136,23 +149,35 @@ class InventoryScreen:
         char_y = 180
         for char_id, char_data in self.character_data.items():
             is_unlocked = char_id in self.unlocked_characters
-            is_selected = char_id == self.selected_character_id
             
             char_rect = pygame.Rect(100, char_y, 300, 100)
             
-            # Draw border if selected
-            if is_selected:
-                pygame.draw.rect(self.screen, GREEN, char_rect.inflate(6, 6), 3, border_radius=10)
-
             # Draw card
             pygame.draw.rect(self.screen, GRAY, char_rect, border_radius=10)
+
+            # Selection Borders
+            # P1 = Green, P2 = Blue
+            p1_selected = self.selected_characters.get(0) == char_id
+            p2_selected = self.selected_characters.get(1) == char_id
+
+            if p1_selected and p2_selected:
+                 # Split border? Or dashed? Let's do double border.
+                 pygame.draw.rect(self.screen, GREEN, char_rect.inflate(10, 10), 3, border_radius=12)
+                 pygame.draw.rect(self.screen, BLUE, char_rect.inflate(6, 6), 3, border_radius=10)
+                 self.draw_text("P1 & P2", 12, char_rect.right + 30, char_rect.centery, WHITE)
+            elif p1_selected:
+                pygame.draw.rect(self.screen, GREEN, char_rect.inflate(6, 6), 3, border_radius=10)
+                self.draw_text("P1", 14, char_rect.right + 20, char_rect.centery, GREEN)
+            elif p2_selected:
+                pygame.draw.rect(self.screen, BLUE, char_rect.inflate(6, 6), 3, border_radius=10)
+                self.draw_text("P2", 14, char_rect.right + 20, char_rect.centery, BLUE)
             
-            # Image - Animated character preview (always idle animation)
-            char_animations_dict = self.character_animations[char_id] # This is a dict of animation lists
+            # Image - Animated character preview
+            char_animations_dict = self.character_animations[char_id]
             
-            current_anim_key = 'idle' # Always play idle animation
+            current_anim_key = 'idle'
             current_animation_frames = char_animations_dict.get(current_anim_key, char_animations_dict['idle'])
-            frame_index = (pygame.time.get_ticks() // 150) % len(current_animation_frames) # Cycle faster
+            frame_index = (pygame.time.get_ticks() // 150) % len(current_animation_frames)
             char_img = current_animation_frames[frame_index]
             self.screen.blit(char_img, (char_rect.x + 10, char_rect.y + 10))
 
@@ -169,9 +194,8 @@ class InventoryScreen:
             char_y += 120
 
         # Guns Section
-        self.draw_text("Weapons", 28, SCREEN_WIDTH / 2 + 300, 120, WHITE)
+        self.draw_text("Weapons (Shared)", 28, SCREEN_WIDTH / 2 + 300, 120, WHITE)
         
-        # Grid layout
         cols = 5
         item_width, item_height = 120, 120
         gap = 20
@@ -194,13 +218,25 @@ class InventoryScreen:
             self.gun_grid_rects[gun_id] = gun_rect
 
             is_unlocked = gun_id in self.unlocked_guns
-            is_equipped = gun_id == self.equipped_gun_id
+            
+            p1_equipped = self.equipped_guns.get(0) == gun_id
+            p2_equipped = self.equipped_guns.get(1) == gun_id
 
             # Border for tier and selection
             tier_color = TIER_COLORS.get(gun_data['tier'], GRAY)
-            border_color = GREEN if is_equipped else tier_color
-            border_width = 4 if is_equipped else 2
-            pygame.draw.rect(self.screen, border_color, gun_rect, border_width, border_radius=8)
+            
+            if p1_equipped and p2_equipped:
+                 pygame.draw.rect(self.screen, GREEN, gun_rect.inflate(8, 8), 3, border_radius=10)
+                 pygame.draw.rect(self.screen, BLUE, gun_rect.inflate(4, 4), 3, border_radius=8)
+                 # self.draw_text("P1/P2", 10, gun_rect.centerx, gun_rect.top - 10, WHITE)
+            elif p1_equipped:
+                pygame.draw.rect(self.screen, GREEN, gun_rect, 4, border_radius=8)
+                # self.draw_text("P1", 10, gun_rect.centerx, gun_rect.top - 10, GREEN)
+            elif p2_equipped:
+                pygame.draw.rect(self.screen, BLUE, gun_rect, 4, border_radius=8)
+                # self.draw_text("P2", 10, gun_rect.centerx, gun_rect.top - 10, BLUE)
+            else:
+                pygame.draw.rect(self.screen, tier_color, gun_rect, 2, border_radius=8)
             
             # Image
             gun_img = self.gun_images[gun_id]
@@ -222,13 +258,28 @@ class InventoryScreen:
         
         # Back button
         self.back_button.draw(self.screen, mouse_pos)
+        
+        # Draw toggle button if multiple players possible (even if not joined yet? No, only if connected)
+        # Actually, let's allow toggling if P2 is connected.
+        if len(self.connected_players) > 1:
+            self.player_toggle_button.draw(self.screen, mouse_pos)
+            
         pygame.display.flip()
 
     def handle_event(self, event):
+        # Default mouse handling
         mouse_pos = pygame.mouse.get_pos()
         
         if self.back_button.is_clicked(event, mouse_pos):
             return 'back'
+            
+        if len(self.connected_players) > 1 and self.player_toggle_button.is_clicked(event, mouse_pos):
+            # Cycle through connected players
+            current_idx = self.connected_players.index(self.active_player_idx)
+            next_idx = (current_idx + 1) % len(self.connected_players)
+            self.active_player_idx = self.connected_players[next_idx]
+            self._update_toggle_button()
+            return None # Consumed
             
         if event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
@@ -239,14 +290,14 @@ class InventoryScreen:
                     if char_id in self.unlocked_characters:
                         char_rect = pygame.Rect(100, char_y, 300, 100)
                         if char_rect.collidepoint(mouse_pos):
-                            return ('character_selected', char_id)
+                            return ('character_selected', self.active_player_idx, char_id) 
                     char_y += 120
 
                 # Gun selection
                 for gun_id, rect in self.gun_grid_rects.items():
                     if gun_id in self.unlocked_guns:
                         if rect.collidepoint(mouse_pos):
-                            return ('gun_selected', gun_id)
+                            return ('gun_selected', self.active_player_idx, gun_id) 
             
             # Scrolling
             elif event.button == 4:  # Scroll up
@@ -255,6 +306,18 @@ class InventoryScreen:
                 # You might want to calculate a proper max_scroll value
                 self.scroll_y += 30
 
+        return None
+    
+    def handle_input(self, actions, player_index):
+        # Handle controller/keyboard navigation for inventory (simplified for now)
+        # This function can be called by main loop for P1 and P2 actions
+        # For now, we will just rely on mouse for P1, and maybe add simple P2 cycle later
+        # Or, P2 can cycle with 'jump' to select next char?
+        
+        if actions.get('shoot'): # Use Shoot button to cycle characters
+             # Logic to cycle next unlocked character for this player
+             pass
+        
         return None
 
     def draw_text(self, text, size, x, y, color):
