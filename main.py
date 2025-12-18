@@ -108,6 +108,7 @@ class Game:
         self.boss_gate_group = pygame.sprite.Group()
         self.power_up_boxes = pygame.sprite.Group()
         self.power_ups = pygame.sprite.Group()
+        self.effects = pygame.sprite.Group()  # For visual effects like explosions
         self.boss = None
 
         # Level selection
@@ -685,10 +686,11 @@ class Game:
             # Enemies target the first alive player, or just the first player if all dead (to prevent crash)
             alive_players = [p for p in self.players if p.health > 0]
             primary_target = alive_players[0] if alive_players else (self.players[0] if self.players else None)
-            
+
             self.enemies.update(primary_target, self.all_sprites, self.enemy_projectiles, self.platforms)
-            
+
             self.enemy_projectiles.update(self.platforms)
+            self.coins.update()  # Update coins for animation and bobbing
             self.power_ups.update()
             self.boss_gate_group.update()
         elif self.game_state == 'boss_fight':
@@ -697,6 +699,7 @@ class Game:
             if self.game_state == 'victory':
                 pygame.mixer.music.stop()
             self.boss_projectiles.update(self.platforms)
+            self.coins.update()  # Update coins for animation and bobbing
 
         # Update each player
         actions_list = []
@@ -843,6 +846,7 @@ class Game:
                     # Create visual explosion effect
                     explosion = Explosion(proj.rect.centerx, proj.rect.centery)
                     self.all_sprites.add(explosion)
+                    self.effects.add(explosion)
                     # Play explosion sound
                     self._play_sfx('explosion')
                     proj.kill()
@@ -877,17 +881,20 @@ class Game:
                             damage = int(proj.damage * distance_factor)
                             self.boss.take_damage(damage)
 
-                    # Break boxes and create power-ups
+                    # Break boxes and create power-ups (but not in boss fights)
                     # Create visual explosion effect
                     explosion = Explosion(proj.rect.centerx, proj.rect.centery)
                     self.all_sprites.add(explosion)
+                    self.effects.add(explosion)
                     proj.kill()
-                    for box in hit_boxes:
-                        power_up_type = box.take_damage(proj.damage)
-                        if power_up_type:
-                            power_up = PowerUp(box.rect.centerx, box.rect.centery, power_up_type)
-                            self.all_sprites.add(power_up)
-                            self.power_ups.add(power_up)
+                    # Don't create power-ups during boss fights
+                    if self.game_state != 'boss_fight':
+                        for box in hit_boxes:
+                            power_up_type = box.take_damage(proj.damage)
+                            if power_up_type:
+                                power_up = PowerUp(box.rect.centerx, box.rect.centery, power_up_type)
+                                self.all_sprites.add(power_up)
+                                self.power_ups.add(power_up)
 
                     # Play explosion sound
                     self._play_sfx('explosion')
@@ -927,6 +934,7 @@ class Game:
                     # Create visual explosion effect
                     explosion = Explosion(proj.rect.centerx, proj.rect.centery)
                     self.all_sprites.add(explosion)
+                    self.effects.add(explosion)
                     # Play explosion sound
                     self._play_sfx('explosion')
                     proj.kill()
@@ -954,6 +962,7 @@ class Game:
                     # Create visual explosion effect
                     explosion = Explosion(hit.rect.centerx, hit.rect.centery)
                     self.all_sprites.add(explosion)
+                    self.effects.add(explosion)
                     # Play explosion sound
                     self._play_sfx('explosion')
                 else:
@@ -963,67 +972,46 @@ class Game:
             if not self.boss.alive():
                 pass # Handled by boss update
 
-        # Update Camera
+        # Update visual effects (like explosions)
+        self.effects.update()
+
+        # Update camera
         self.update_camera()
 
     def update_camera(self):
-        # Camera tracks average X of all alive players
-        alive_players = [p for p in self.players if p.health > 0]
-        if not alive_players:
-            return
-
-        avg_x = sum(p.rect.centerx for p in alive_players) / len(alive_players)
-
         # Different camera behavior for boss fight
         if self.game_state == 'boss_fight':
-            # In boss fights, keep the camera focused on the boss arena
-            # Boss arena is generally around the middle-right of the screen
-            if self.boss:
-                # Target the center between player and boss
-                boss_center_x = self.boss.rect.centerx
-                level_center = SCREEN_WIDTH * 0.75  # Boss starts at 75% of screen width
+            # In boss fights, keep the camera fixed in the middle of the boss arena
+            # The boss arena is usually set up to be centered in the level
+            # Set to a fixed position (usually the center of the boss area)
+            self.camera_x = 0  # Fixed camera position for boss room
+        else:
+            # Camera tracks average X of all alive players in platformer mode
+            alive_players = [p for p in self.players if p.health > 0]
+            if not alive_players:
+                return
 
-                # Keep camera between boss and player but constrained to boss area
-                target_camera_x = avg_x - SCREEN_WIDTH / 2
+            avg_x = sum(p.rect.centerx for p in alive_players) / len(alive_players)
+            target_x = avg_x - SCREEN_WIDTH / 2
 
-                # Define boss arena boundaries
-                boss_arena_left = max(0, boss_center_x - SCREEN_WIDTH * 0.7)
-                boss_arena_right = max(SCREEN_WIDTH * 0.5, boss_center_x + SCREEN_WIDTH * 0.3)
+            # Apply smoothing (lerp)
+            self.camera_x += (target_x - self.camera_x) * 0.1
 
-                # Constrain camera to boss arena
-                target_camera_x = max(boss_arena_left, min(target_camera_x, boss_arena_right - SCREEN_WIDTH))
-            else:
-                # If no boss, use standard tracking
+            # Prevent camera from going beyond level bounds
+            # We need to determine the level width based on current platform positions
+            if hasattr(self, 'boss_gate'):  # If we have a boss gate, we can use its position
                 level_width = self.boss_gate.rect.right + 100
-                target_camera_x = avg_x - SCREEN_WIDTH / 2
-                target_camera_x = max(0, min(target_camera_x, level_width - SCREEN_WIDTH))
-        else:
-            # Standard level tracking
-            level_width = self.boss_gate.rect.right + 100
-            target_camera_x = avg_x - SCREEN_WIDTH / 2
-            target_camera_x = max(0, min(target_camera_x, level_width - SCREEN_WIDTH))
-
-        # Implement smooth camera following to prevent flickering
-        # Instead of instantly snapping to target, move gradually towards it
-        camera_smooth_speed = 0.1  # Adjust this value to control smoothness (0.05-0.2)
-        self.camera_x = self.camera_x * (1 - camera_smooth_speed) + target_camera_x * camera_smooth_speed
-
-        # Ensure camera doesn't go beyond level boundaries (double check bounds after smoothing)
-        if self.game_state != 'boss_fight':
-            level_width = self.boss_gate.rect.right + 100
+            else:
+                # Fallback to a reasonable level width
+                level_width = SCREEN_WIDTH * 3  # Default width if no boss gate exists yet
             self.camera_x = max(0, min(self.camera_x, level_width - SCREEN_WIDTH))
-        else:
-            # For boss fights, ensure it stays within calculated bounds
-            if self.boss:
-                boss_center_x = self.boss.rect.centerx
-                boss_arena_left = max(0, boss_center_x - SCREEN_WIDTH * 0.7)
-                boss_arena_right = max(SCREEN_WIDTH * 0.5, boss_center_x + SCREEN_WIDTH * 0.3)
-                self.camera_x = max(boss_arena_left, min(self.camera_x, boss_arena_right - SCREEN_WIDTH))
 
+        # Apply screen shake effects
         if pygame.time.get_ticks() < self.screen_shake_start_time + self.screen_shake_duration:
             shake_x = random.randint(-self.screen_shake_intensity, self.screen_shake_intensity)
             self.camera_x += shake_x
         else:
+            # Reset shake values when shake is complete
             self.screen_shake_duration = 0
             self.screen_shake_intensity = 0
 

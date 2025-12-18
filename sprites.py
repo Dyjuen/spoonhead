@@ -670,7 +670,10 @@ class Player(pygame.sprite.Sprite):
                 
             elif self.character_id == 'punk':
                 # Punk Bomb (Slow moving, huge damage that explodes on impact)
-                proj = Projectile(self.rect.centerx, self.rect.centery, 8 * direction, 0, damage=150, player=self, is_explosive=True)
+                # Initial velocity with slight upward component for arc trajectory
+                initial_vx = 6 * direction  # Slower horizontal movement
+                initial_vy = -4  # Slight upward throw to create a low arc
+                proj = Projectile(self.rect.centerx, self.rect.centery, initial_vx, initial_vy, damage=150, player=self, is_explosive=True, has_gravity=True)
                 size = 60
                 proj.image = pygame.Surface((size, size), pygame.SRCALPHA)
                 pygame.draw.circle(proj.image, ORANGE, (size//2, size//2), size//2)
@@ -700,7 +703,9 @@ class Enemy(pygame.sprite.Sprite):
         self.last_frame_update = pygame.time.get_ticks()
         self.image = self.animations[self.action][self.frame_index]
         self.rect = self.image.get_rect(center=(x, y))
-        self.hitbox = self.rect.copy()
+        # Create a smaller hitbox for more precise hit detection while maintaining platform stance
+        self.hitbox = pygame.Rect(0, 0, self.rect.width * 0.6, self.rect.height * 0.7)  # 60% width, 70% height
+        self.hitbox.center = self.rect.center
         self.health, self.speed, self.direction = 30, speed, 1
         self.start_x, self.patrol_distance = x, patrol_distance
         self.shoot_cooldown, self.last_shot_time = shoot_cooldown, time.time()
@@ -853,7 +858,7 @@ class Projectile(pygame.sprite.Sprite):
             surf = pygame.Surface(bullet_size, pygame.SRCALPHA); surf.fill(YELLOW)
             Projectile.animation_frames_right = [surf]*2; Projectile.animation_frames_left = [surf]*2
 
-    def __init__(self, x, y, vx, vy, damage=10, player=None, is_explosive=False):
+    def __init__(self, x, y, vx, vy, damage=10, player=None, is_explosive=False, has_gravity=False):
         super().__init__()
         direction = 1 if vx >= 0 else -1
         self.anim_frames = Projectile.animation_frames_right if direction == 1 else Projectile.animation_frames_left
@@ -863,11 +868,18 @@ class Projectile(pygame.sprite.Sprite):
         self.damage = damage
         self.player = player  # Store reference to player who fired the projectile
         self.is_explosive = is_explosive  # Whether this projectile explodes on impact
+        self.has_gravity = has_gravity  # Apply gravity physics for realistic trajectory
+        self.gravity = 0.5 if has_gravity else 0  # Gravity acceleration
 
     def update(self):
         if pygame.time.get_ticks() - self.last_frame_update > 100:
             self.last_frame_update = pygame.time.get_ticks()
             self.frame_index = (self.frame_index + 1) % len(self.anim_frames); self.image = self.anim_frames[self.frame_index]
+
+        # Apply gravity if this projectile has it
+        if self.has_gravity:
+            self.vy += self.gravity
+
         self.rect.move_ip(self.vx, self.vy)
         if not self.rect.colliderect(pygame.Rect(-100,-100,10000,SCREEN_HEIGHT+200)): self.kill()
 
@@ -940,7 +952,7 @@ class Coin(pygame.sprite.Sprite):
 
         self.image = self.animations['idle'][self.frame_index] # Set initial image
         self.rect = self.image.get_rect(center=(x, y))
-        self.bob_offset, self.bob_range, self.original_y = random.uniform(0, 2*math.pi), 4, y
+        self.bob_offset, self.bob_range, self.original_y = random.uniform(0, 2*math.pi), 6, y  # Increased bob range for more visible movement
 
     def load_animations(self):
         self.animations['idle'] = []
@@ -955,12 +967,15 @@ class Coin(pygame.sprite.Sprite):
 
     def update(self):
         now = pygame.time.get_ticks()
-        if now - self.last_frame_update > 100: # Adjust animation speed as needed
+        # Animate faster for more visible effect (80ms instead of 100ms)
+        if now - self.last_frame_update > 80:
             self.last_frame_update = now
             self.frame_index = (self.frame_index + 1) % len(self.animations['idle'])
             self.image = self.animations['idle'][self.frame_index]
 
-        self.rect.y = self.original_y + int(math.sin(self.bob_offset) * self.bob_range); self.bob_offset += 0.1
+        # Update bobbing motion (slightly faster for more dynamic movement)
+        self.rect.y = self.original_y + int(math.sin(self.bob_offset) * self.bob_range)
+        self.bob_offset += 0.15  # Increased speed for more visible bobbing
 
 class BossGate(pygame.sprite.Sprite):
     def __init__(self, x, y):
